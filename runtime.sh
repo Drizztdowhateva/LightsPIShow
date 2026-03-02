@@ -1,29 +1,14 @@
-#!/usr/bin/env bash
-# WS281X Pattern Runner — simple launcher
-# Usage:
-#   sudo ./runtime.sh                    # run with default headless config
-#   sudo ./runtime.sh --pattern 1 ...   # pass args directly to into.py
-#   sudo ./runtime.sh --test            # ASCII simulation (no hardware needed)
+#!/bin/bash
 
-set -euo pipefail
+# Create and activate a Python virtual environment
+python3 -m venv venv
+source venv/bin/activate
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Install dependencies
+pip install -r requirements.txt
 
-echo "=== WS281X Pattern Runner ==="
-echo "Tip: Press Ctrl+O while running to print the background (nohup) launch command."
-echo "     Press q or Ctrl+C to quit."
-echo ""
+# Run into.py with sensible defaults for headless mode
+python into.py --headless
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "Note: Hardware LED access typically requires root. Re-run with: sudo ./runtime.sh" >&2
-    echo ""
-fi
-
-# If arguments are provided, pass them directly to into.py.
-# Otherwise, use the default headless config for a prompt-free startup.
-if [ "$#" -gt 0 ]; then
-    exec python3 into.py "$@"
-else
-    exec python3 into.py --headless --headless-config headless/headless_settings.json
-fi
+# Deactivate the virtual environment
+deactivate
