@@ -3,6 +3,7 @@ import json
 import random
 import select
 import shutil
+import signal
 import sys
 import termios
 import time
@@ -1088,6 +1089,14 @@ def main() -> None:
 
     run_loop(state, options)
 
+
+def _shutdown_handler(signum: int, frame: object) -> None:
+    """Convert SIGTERM / SIGHUP into SystemExit so the finally block runs."""
+    raise SystemExit(0)
+
+
+signal.signal(signal.SIGTERM, _shutdown_handler)
+signal.signal(signal.SIGHUP, _shutdown_handler)
 
 try:
     main()

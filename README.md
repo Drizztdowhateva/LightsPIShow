@@ -1,5 +1,21 @@
 # Lights PI Show
 
+## SOS / Emergency Quick Start
+
+Launch the **Emergency SOS** pattern immediately in the background using the dedicated headless config:
+
+```bash
+sudo python3 runtime.py --nohup -- --headless --headless-config headless/headless_emergency_sos_red.json
+```
+
+To stop it at any time:
+
+```bash
+kill $(cat runtime_live.pid) 2>/dev/null || echo "No running process found"
+```
+
+---
+
 ## Clone Instructions
 
 To clone the repository, use the following command:
