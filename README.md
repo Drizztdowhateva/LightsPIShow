@@ -2,11 +2,10 @@
 
 ## SOS / Emergency Quick Start
 
-Launch the **Emergency SOS** pattern immediately in the background
-(the `--` separates launcher flags from the pattern arguments passed to `into.py`):
+Launch the **Emergency SOS** pattern immediately in the background using the dedicated headless config:
 
 ```bash
-sudo python3 runtime.py --nohup -- --pattern 4
+sudo python3 runtime.py --nohup -- --headless --headless-config headless/headless_emergency_sos_red.json
 ```
 
 To stop it at any time:
