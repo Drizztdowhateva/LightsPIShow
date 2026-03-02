@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # WS281X Pattern Runner — simple launcher
 # Usage:
-#   sudo ./runtime.sh                    # run with default headless config
+#   sudo ./runtime.sh                    # prompt for headless option, then start
 #   sudo ./runtime.sh --pattern 1 ...   # pass args directly to into.py
+#   sudo ./runtime.sh --headless        # skip prompt, use default headless config
 #   sudo ./runtime.sh --test            # ASCII simulation (no hardware needed)
 
 set -euo pipefail
@@ -37,9 +38,10 @@ if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
 fi
 
 # If arguments are provided, pass them directly to into.py.
-# Otherwise, use the default headless config for a prompt-free startup.
+# Otherwise, run interactively so the user is prompted for the headless option
+# before the runtime shortcuts are displayed.
 if [ "$#" -gt 0 ]; then
     exec "$PYTHON" into.py "$@"
 else
-    exec "$PYTHON" into.py --headless --headless-config headless/headless_settings.json
+    exec "$PYTHON" into.py
 fi
