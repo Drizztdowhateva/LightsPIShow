@@ -8,10 +8,9 @@ Beautiful, keyboard-driven LED patterns for WS281X strips — with safe ASCII si
 
 ## Quick Start ✨
 
-Run a quick ASCII test (no hardware):
+Run a quick ASCII test (no hardware needed):
 
 ```bash
-cd /home/blackmox/code/ws281x
 python3 into.py --test --pattern 1 --chase-color 4 --speed 3 --frames 20
 ```
 
@@ -21,16 +20,29 @@ python3 into.py --test --pattern 1 --chase-color 4 --speed 3 --frames 20
 - GitHub Profile: https://github.com/Drizztdowhateva
 - Full page with QR codes: [DONATION_AND_GITHUB_QR.md](DONATION_AND_GITHUB_QR.md)
 
-## Run (hardware) — Easy mode 🔧
+## Run (hardware) — Easiest mode 🔧
+
+The simplest way to start the pattern runner on a Raspberry Pi:
 
 ```bash
-cd /home/blackmox/code/ws281x
-sudo -n python3 into.py --pattern 1 --chase-color 4 --speed 3 --frames 0
+sudo ./runtime.sh
 ```
 
-## One-file runtime (install + save + run) 🧰
+This starts the runner using the default headless config (`headless/headless_settings.json`) — no interactive prompts. Pass any `into.py` arguments directly to override:
 
-Installs required runtime package(s) and optionally pins them to `requirements.txt`:
+```bash
+sudo ./runtime.sh --pattern 3 --speed 3
+sudo ./runtime.sh --headless --headless-config headless/emergency_sos_red.json
+sudo ./runtime.sh --test --frames 40    # ASCII simulation, no hardware
+```
+
+> **Heads up (Ctrl+O):** While the runner is active, press **Ctrl+O** to print the
+> equivalent `nohup` background launch command for the current settings along
+> with the stop command (`kill $(cat runtime_live.pid)`).
+
+## One-file Python launcher (install + run) 🧰
+
+Installs required runtime package(s) from `requirements.txt` and then runs `into.py`:
 
 ```bash
 python3 runtime.py -- --pattern 1 --chase-color 4 --speed 3 --frames 0
@@ -38,31 +50,36 @@ python3 runtime.py -- --pattern 1 --chase-color 4 --speed 3 --frames 0
 sudo python3 runtime.py --skip-install --no-save --nohup -- --pattern 1 --chase-color 4 --speed 3 --frames 0
 ```
 
-When using `--nohup` the runtime prints a cancel command and writes a PID file (`runtime_live.pid`):
-
-Preferred cancel command:
+When using `--nohup` the launcher prints a clear "Heads Up" banner with the command, log file, and stop instructions, then writes a PID file (`runtime_live.pid`):
 
 ```bash
 kill $(cat runtime_live.pid)
 ```
 
-Fallback:
-
-```bash
-pkill -f 'into.py'
-```
-
 ## Headless mode & configs 📁
 
-Store and load JSON configs from the `headless/` folder. The interactive prompt now presents a short a/b/c/d menu for available `headless/*.json` files and an `e` option to enter a custom path.
+JSON configs live in the `headless/` folder and let you run without interactive prompts.
+The following configs are included out of the box:
 
-Load headless config and run:
+| File | Pattern | Description |
+|------|---------|-------------|
+| `headless_settings.json` | Chase (Orange, Medium) | Default startup config |
+| `chase_rainbow.json` | Chase (Rainbow, Fast) | Fast rainbow chase |
+| `random_warm.json` | Random (Warm palette) | Warm-color random fill |
+| `bounce_blue.json` | Bounce (Blue) | Blue bounce |
+| `emergency_sos_red.json` | **Emergency SOS** | 🚨 Emergency flag ON — SOS in red |
+
+Load a headless config and run:
 
 ```bash
 python3 into.py --headless --headless-config headless/headless_settings.json
+python3 into.py --headless --headless-config headless/emergency_sos_red.json
 ```
 
-Export current settings into a headless JSON file (new):
+Interactive menu — the startup prompt shows the first four `headless/*.json` files as
+selectable options (a–d), with option `e` to enter a custom path.
+
+Export current settings into a headless JSON file:
 
 ```bash
 python3 into.py --export-headless          # writes headless/<pattern>_<name>.json
