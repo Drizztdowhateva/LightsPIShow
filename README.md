@@ -77,6 +77,16 @@ Headless config run:
 python3 into.py --headless --headless-config headless/headless_settings.json
 ```
 
+## Packaging Runtimes
+
+Three consolidated packaging runtimes are available under `runtimes/`:
+
+- Linux AppImage: `bash runtimes/runtime_appimage.sh`
+- Windows EXE: `powershell -ExecutionPolicy Bypass -File .\\runtimes\\runtime_exe.ps1`
+- macOS DMG: `bash runtimes/runtime_dmg.sh`
+
+All three wrappers share the same implementation in `runtimes/runtime_package.py`.
+
 ## Media
 
 - Project banner: `media/lights-pi-show-banner.svg`
