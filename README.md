@@ -2,7 +2,28 @@
 
 Keyboard-driven WS281X LED pattern runner with safe local testing, headless config workflows, and runtime helper tooling.
 
+[![CI](https://github.com/Drizztdowhateva/Lights_PI_Show/actions/workflows/ci.yml/badge.svg)](https://github.com/Drizztdowhateva/Lights_PI_Show/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ![Lights PI Show Banner](media/lights-pi-show-banner.svg)
+
+## Support and Donations
+
+If this project helps your workflow, support is appreciated:
+
+- GitHub Sponsors: `https://github.com/sponsors/Drizztdowhateva`
+- Cash App: `https://cash.app/$teerRight`
+- GitHub Profile: `https://github.com/Drizztdowhateva`
+
+## Table of Contents
+
+- [SOS / Emergency Quick Start](#sos--emergency-quick-start)
+- [Technical Profile](#technical-profile)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Project Structure](#project-structure)
+- [Quality and Standards](#quality-and-standards)
+- [Governance](#governance)
 
 ## SOS / Emergency Quick Start
 
@@ -77,30 +98,34 @@ Headless config run:
 python3 into.py --headless --headless-config headless/headless_settings.json
 ```
 
-## Packaging Runtimes
+## Project Structure
 
-Three consolidated packaging runtimes are available under `runtimes/`:
+```text
+Lights_PI_Show/
+|- into.py                    # Main pattern runner
+|- runtime.py                 # Runtime helper wrapper
+|- runtime.sh                 # Shell launcher
+|- setup_permissions.sh       # Linux capability setup helper
+|- headless/                  # JSON headless configs
+|- media/                     # README assets and screenshots
+|- runtimes/                  # Runtime artifacts/log helpers
+|- .github/workflows/ci.yml   # CI validation workflow
+```
 
-- Linux AppImage: `bash runtimes/runtime_appimage.sh`
-- Windows EXE: `powershell -ExecutionPolicy Bypass -File .\\runtimes\\runtime_exe.ps1`
-- macOS DMG: `bash runtimes/runtime_dmg.sh`
+## Quality and Standards
 
-All three wrappers share the same implementation in `runtimes/runtime_package.py`.
+- CI checks are defined in `.github/workflows/ci.yml`.
+- Keep paths relative and avoid hard-coded home-directory locations.
+- Keep API keys and secrets out of version control.
+- Prefer test mode (`--test`) during development when hardware is unavailable.
 
 ## Media
 
 - Project banner: `media/lights-pi-show-banner.svg`
 - Add screenshots and GIFs to `media/` and reference them here for release posts
 
-## Support and Donations
+## Governance
 
-If this project helps your workflow, support is appreciated:
-
-- GitHub Sponsors: `https://github.com/sponsors/Drizztdowhateva`
-- Cash App: `https://cash.app/$teerRight`
-- GitHub Profile: `https://github.com/Drizztdowhateva`
-
-## Notes
-
-- Keep paths relative and avoid hard-coded home-directory locations.
-- Keep API keys and secrets out of version control.
+- Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- License: [LICENSE](LICENSE)
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
