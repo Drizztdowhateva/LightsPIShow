@@ -21,6 +21,7 @@ If this project helps your workflow, support is appreciated:
 - [Technical Profile](#technical-profile)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Support Task Manager](#support-task-manager)
 - [Project Structure](#project-structure)
 - [Quality and Standards](#quality-and-standards)
 - [Governance](#governance)
@@ -98,6 +99,29 @@ Headless config run:
 python3 into.py --headless --headless-config headless/headless_settings.json
 ```
 
+## Support Task Manager
+
+Use the runtime support manager to track ideas/features as todo tasks and hand them off to Copilot.
+
+- Open manager while runtime is active: `Alt+F1` (or `Ctrl+M` fallback)
+- Actions: `a` add, `l` list, `e` edit, `d` done, `r` reopen, `x` delete, `s` send, `u` unsend
+- Priority support: `high`, `med`, `low` (open tasks are sorted by priority first)
+
+Files created under `LessonProg/`:
+
+- `support_tickets.json`: primary task store (read/modify/check-off)
+- `copilot_queue.md`: Copilot-ready handoff queue (append-only markdown)
+
+Non-interactive export to Copilot queue:
+
+```bash
+# Send all open tasks
+python3 into.py --support-export
+
+# Send only specific IDs
+python3 into.py --support-export 1,2,5
+```
+
 ## Project Structure
 
 ```text
@@ -129,3 +153,7 @@ Lights_PI_Show/
 - Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - License: [LICENSE](LICENSE)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
+
+## Chat
+
+- WhatsApp: https://wa.me/13127235816

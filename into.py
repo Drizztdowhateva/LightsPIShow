@@ -1,5 +1,7 @@
 import argparse
+from datetime import datetime, timezone
 import json
+import os
 import random
 import select
 import shutil
@@ -32,6 +34,11 @@ LED_CHANNEL = 0
 HEADLESS_DEFAULT_CONFIG = "headless/headless_settings.json"
 NOHUP_LOG_FILE = "runtime_live.log"
 NOHUP_PID_FILE = "runtime_live.pid"
+SUPPORT_TICKET_DIR = "LessonProg"
+SUPPORT_TICKET_FILE = "support_tickets.json"
+SUPPORT_TICKET_LEGACY_FILE = "support_tickets.jsonl"
+SUPPORT_COPILOT_QUEUE_FILE = "copilot_queue.md"
+TASK_PRIORITY_RANK: dict[str, int] = {"high": 0, "med": 1, "low": 2}
 EMERGENCY_DELAY_SECONDS = 0.12
 EMERGENCY_COLORS: list[tuple[str, int]] = [
     ("Red", Color(255, 0, 0)),
@@ -67,15 +74,55 @@ def normalize_pattern_for_mode(state: "AppState") -> None:
         state.pattern = "1"
 
 SPEED_LABELS: dict[str, str] = {
-    "1": "Slow",
-    "2": "Medium",
-    "3": "Fast",
+    "0": "Constant",
+    "1": "Level 1",
+    "2": "Level 2",
+    "3": "Level 3",
+    "4": "Level 4",
+    "5": "Level 5",
+    "6": "Level 6",
+    "7": "Level 7",
+    "8": "Level 8",
+    "9": "Level 9",
 }
 
 SPEED_MAP: dict[str, dict[str, float]] = {
-    "1": {"1": 0.08, "2": 0.03, "3": 0.01},
-    "2": {"1": 0.30, "2": 0.12, "3": 0.05},
-    "3": {"1": 0.06, "2": 0.02, "3": 0.008},
+    "1": {
+        "0": 0.0,
+        "1": 0.12,
+        "2": 0.09,
+        "3": 0.07,
+        "4": 0.05,
+        "5": 0.03,
+        "6": 0.02,
+        "7": 0.015,
+        "8": 0.010,
+        "9": 0.006,
+    },
+    "2": {
+        "0": 0.0,
+        "1": 0.45,
+        "2": 0.35,
+        "3": 0.27,
+        "4": 0.20,
+        "5": 0.12,
+        "6": 0.08,
+        "7": 0.06,
+        "8": 0.04,
+        "9": 0.02,
+    },
+    "3": {
+        "0": 0.0,
+        "1": 0.10,
+        "2": 0.08,
+        "3": 0.06,
+        "4": 0.04,
+        "5": 0.025,
+        "6": 0.018,
+        "7": 0.012,
+        "8": 0.008,
+        "9": 0.004,
+    },
 }
 
 CHASE_COLORS: dict[str, tuple[str, int]] = {
@@ -101,10 +148,11 @@ BOUNCE_COLORS: dict[str, tuple[str, int]] = {
 SHORTCUTS_TEXT = """
 Runtime shortcuts:
     1 / 2 / 3 / 4 Switch pattern (1=Chase, 2=Random, 3=Bounce, 4=SOS)
-        p           Cycle pattern (Chase -> Random -> Bounce -> SOS)
-  s           Cycle speed (Slow -> Medium -> Fast)
+    s           Cycle speed (0=Constant, 1-9=Level)
   c           Cycle color option for current pattern
     + / -       Brightness up/down
+    Alt+F1      Open support task manager (add/edit/done/send/unsend)
+    Ctrl+M      Support manager fallback (tmux-safe)
     Ctrl+O      Print nohup command for current settings
   h           Show this shortcuts help again
   q           Quit
@@ -114,22 +162,21 @@ Runtime shortcuts:
 OUTPUT_EXAMPLE_TEXT = """
 Runtime shortcuts:
     1 / 2 / 3   Switch pattern (1=Chase, 2=Random, 3=Bounce)
-        p           Cycle pattern (Chase -> Random -> Bounce)
-    s           Cycle speed (Slow -> Medium -> Fast)
+    s           Cycle speed (0=Constant, 1-9=Level)
     c           Cycle color option for current pattern
     h           Show this shortcuts help again
     q           Quit
     Ctrl+C      Quit
-Pattern: Chase | Speed: Fast | Color: Rainbow
-Pattern: Chase | Speed: Fast | Color: Rainbow
-Pattern: Random | Speed: Fast | Palette: Any RGB
-Pattern: Bounce | Speed: Fast | Color: Blue
-Pattern: Chase | Speed: Fast | Color: Rainbow
-Pattern: Random | Speed: Fast | Palette: Any RGB
-Pattern: Bounce | Speed: Fast | Color: Blue
-Pattern: Chase | Speed: Fast | Color: Rainbow
-Pattern: Bounce | Speed: Fast | Color: Blue
-Pattern: Random | Speed: Fast | Palette: Any RGB
+Pattern: Chase | Speed: Level 9 | Color: Rainbow
+Pattern: Chase | Speed: Level 9 | Color: Rainbow
+Pattern: Random | Speed: Level 9 | Palette: Any RGB
+Pattern: Bounce | Speed: Level 9 | Color: Blue
+Pattern: Chase | Speed: Level 9 | Color: Rainbow
+Pattern: Random | Speed: Level 9 | Palette: Any RGB
+Pattern: Bounce | Speed: Level 9 | Color: Blue
+Pattern: Chase | Speed: Level 9 | Color: Rainbow
+Pattern: Bounce | Speed: Level 9 | Color: Blue
+Pattern: Random | Speed: Level 9 | Palette: Any RGB
 """.strip()
 
 
@@ -403,71 +450,89 @@ def color_to_ascii(color: int) -> str:
 def pattern_step_chase(state: AppState) -> None:
     active_strip = get_strip()
     clear_strip(show_now=False)
-    if state.chase_color == "4":
-        color = wheel((state.rainbow_offset + state.chase_position * 8) & 255)
-        state.rainbow_offset = (state.rainbow_offset + 3) & 255
-    else:
-        color = CHASE_COLORS[state.chase_color][1]
-    active_strip.setPixelColor(state.chase_position, color)
-    active_strip.show()
-    state.chase_position = (state.chase_position + 1) % LED_COUNT
+    try:
+        if state.chase_color == "4":
+            color = wheel((state.rainbow_offset + state.chase_position * 8) & 255)
+            state.rainbow_offset = (state.rainbow_offset + 3) & 255
+        else:
+            color = CHASE_COLORS.get(state.chase_color, CHASE_COLORS["1"])[1]
+        active_strip.setPixelColor(state.chase_position, color)
+        active_strip.show()
+        state.chase_position = (state.chase_position + 1) % LED_COUNT
+    except Exception as e:
+        print(f"[ERROR] Chase pattern step failed: {e}")
+        state.chase_color = "1"
 
 
 def pattern_step_random(state: AppState) -> None:
     active_strip = get_strip()
-    palette = RANDOM_PALETTES[state.random_palette][1]
-    for i in range(LED_COUNT):
-        if palette is None:
-            active_strip.setPixelColor(
-                i,
-                Color(
-                    random.randint(0, 255),
-                    random.randint(0, 255),
-                    random.randint(0, 255),
-                ),
-            )
-        else:
-            active_strip.setPixelColor(i, random.choice(palette))
-    active_strip.show()
+    try:
+        palette = RANDOM_PALETTES.get(state.random_palette, RANDOM_PALETTES["1"])[1]
+        for i in range(LED_COUNT):
+            if palette is None:
+                active_strip.setPixelColor(
+                    i,
+                    Color(
+                        random.randint(0, 255),
+                        random.randint(0, 255),
+                        random.randint(0, 255),
+                    ),
+                )
+            else:
+                active_strip.setPixelColor(i, random.choice(palette))
+        active_strip.show()
+    except Exception as e:
+        print(f"[ERROR] Random pattern step failed: {e}")
+        state.random_palette = "1"
 
 
 def pattern_step_bounce(state: AppState) -> None:
     active_strip = get_strip()
     clear_strip(show_now=False)
-    if state.bounce_color == "4":
-        color = wheel((state.rainbow_offset + state.bounce_position * 8) & 255)
-        state.rainbow_offset = (state.rainbow_offset + 3) & 255
-    else:
-        color = BOUNCE_COLORS[state.bounce_color][1]
-    active_strip.setPixelColor(state.bounce_position, color)
-    active_strip.show()
+    try:
+        if state.bounce_color == "4":
+            color = wheel((state.rainbow_offset + state.bounce_position * 8) & 255)
+            state.rainbow_offset = (state.rainbow_offset + 3) & 255
+        else:
+            color = BOUNCE_COLORS.get(state.bounce_color, BOUNCE_COLORS["1"])[1]
+        active_strip.setPixelColor(state.bounce_position, color)
+        active_strip.show()
 
-    if state.bounce_position == LED_COUNT - 1:
-        state.bounce_direction = -1
-    elif state.bounce_position == 0:
-        state.bounce_direction = 1
-    state.bounce_position += state.bounce_direction
+        if state.bounce_position == LED_COUNT - 1:
+            state.bounce_direction = -1
+        elif state.bounce_position == 0:
+            state.bounce_direction = 1
+        state.bounce_position += state.bounce_direction
+    except Exception as e:
+        print(f"[ERROR] Bounce pattern step failed: {e}")
+        state.bounce_color = "1"
 
 
 def pattern_step_emergency(state: AppState) -> None:
     active_strip = get_strip()
-    step_on = EMERGENCY_SOS_STEPS[state.emergency_step] > 0
-    color = EMERGENCY_COLORS[state.emergency_color_index][1]
+    try:
+        step_on = EMERGENCY_SOS_STEPS[state.emergency_step] > 0
+        color = EMERGENCY_COLORS[state.emergency_color_index % len(EMERGENCY_COLORS)][1]
 
-    for i in range(LED_COUNT):
-        active_strip.setPixelColor(i, color if step_on else Color(0, 0, 0))
-    active_strip.show()
+        for i in range(LED_COUNT):
+            active_strip.setPixelColor(i, color if step_on else Color(0, 0, 0))
+        active_strip.show()
 
-    state.emergency_step += 1
-    if state.emergency_step >= len(EMERGENCY_SOS_STEPS):
+        state.emergency_step += 1
+        if state.emergency_step >= len(EMERGENCY_SOS_STEPS):
+            state.emergency_step = 0
+            state.emergency_color_index = (state.emergency_color_index + 1) % len(EMERGENCY_COLORS)
+    except Exception as e:
+        print(f"[ERROR] Emergency pattern step failed: {e}")
         state.emergency_step = 0
-        state.emergency_color_index = (state.emergency_color_index + 1) % len(EMERGENCY_COLORS)
+        state.emergency_color_index = 0
 
 
 def get_delay(state: AppState) -> float:
     if state.pattern == "4":
         return EMERGENCY_DELAY_SECONDS
-    return SPEED_MAP[state.pattern][state.speed]
+    pattern_map = SPEED_MAP.get(state.pattern, SPEED_MAP["1"])
+    return pattern_map.get(state.speed, pattern_map["5"])
 
 
 def wheel(position: int) -> int:
@@ -511,7 +576,444 @@ def maybe_read_key() -> str | None:
     ready, _, _ = select.select([sys.stdin], [], [], 0)
     if not ready:
         return None
-    return sys.stdin.read(1)
+
+    key = sys.stdin.read(1)
+    if key != "\x1b":
+        return key
+
+    # Parse escape sequences for function keys (works in tmux and common xterm modes).
+    sequence = key
+    for _ in range(7):
+        extra_ready, _, _ = select.select([sys.stdin], [], [], 0.002)
+        if not extra_ready:
+            break
+        sequence += sys.stdin.read(1)
+
+    if sequence in {"\x1bOP", "\x1b[11~", "\x1b[[A"}:
+        return "F1"
+    if sequence in {"\x1b\x1bOP", "\x1b\x1b[11~", "\x1b\x1b[[A"}:
+        return "ALT_F1"
+
+    # Unrecognized escape sequences should not interfere with runtime controls.
+    return None
+
+
+def support_ticket_store_path() -> Path:
+    out_dir = Path(SUPPORT_TICKET_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir / SUPPORT_TICKET_FILE
+
+
+def _state_snapshot(state: AppState) -> dict[str, Any]:
+    return {
+        "pattern": state.pattern,
+        "speed": state.speed,
+        "brightness": state.brightness,
+        "max_brightness": state.max_brightness,
+        "chase_color": state.chase_color,
+        "random_palette": state.random_palette,
+        "bounce_color": state.bounce_color,
+        "emergency_only": state.emergency_only,
+    }
+
+
+def _load_support_ticket_store(path: Path) -> dict[str, Any]:
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and isinstance(data.get("tasks"), list):
+                raw_tasks = data.get("tasks", [])
+                tasks: list[dict[str, Any]] = []
+                max_id = 0
+                for raw_task in raw_tasks:
+                    if not isinstance(raw_task, dict):
+                        continue
+                    task_id = int(raw_task.get("id", 0))
+                    if task_id <= 0:
+                        continue
+                    max_id = max(max_id, task_id)
+                    memo = str(raw_task.get("memo", "")).strip()
+                    tasks.append(
+                        {
+                            "id": task_id,
+                            "memo": memo,
+                            "priority": normalize_priority(raw_task.get("priority", "med")),
+                            "status": "done" if str(raw_task.get("status", "open")) == "done" else "open",
+                            "created_utc": raw_task.get("created_utc"),
+                            "updated_utc": raw_task.get("updated_utc"),
+                            "completed_utc": raw_task.get("completed_utc"),
+                            "sent_to_copilot_utc": raw_task.get("sent_to_copilot_utc"),
+                            "state": raw_task.get("state", {}),
+                        }
+                    )
+
+                next_id = int(data.get("next_id", max_id + 1))
+                next_id = max(next_id, max_id + 1)
+                return {"next_id": next_id, "tasks": tasks}
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Migrate legacy append-only jsonl entries if present.
+    legacy_path = path.parent / SUPPORT_TICKET_LEGACY_FILE
+    tasks: list[dict[str, Any]] = []
+    next_id = 1
+    if legacy_path.exists():
+        try:
+            for raw_line in legacy_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                memo = str(row.get("memo", "")).strip()
+                if not memo:
+                    continue
+                created = str(row.get("timestamp_utc", datetime.now(timezone.utc).isoformat()))
+                tasks.append(
+                    {
+                        "id": next_id,
+                        "memo": memo,
+                        "priority": "med",
+                        "status": "open",
+                        "created_utc": created,
+                        "updated_utc": created,
+                        "completed_utc": None,
+                        "sent_to_copilot_utc": None,
+                        "state": row.get("state", {}),
+                    }
+                )
+                next_id += 1
+        except (json.JSONDecodeError, OSError):
+            tasks = []
+            next_id = 1
+
+    return {"next_id": next_id, "tasks": tasks}
+
+
+def _write_support_ticket_store(path: Path, store: dict[str, Any]) -> None:
+    path.write_text(json.dumps(store, indent=2) + "\n", encoding="utf-8")
+
+
+def normalize_priority(value: Any) -> str:
+    normalized = str(value).strip().lower()
+    if normalized in TASK_PRIORITY_RANK:
+        return normalized
+    return "med"
+
+
+def _sorted_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        tasks,
+        key=lambda t: (
+            0 if str(t.get("status", "open")) == "open" else 1,
+            TASK_PRIORITY_RANK.get(normalize_priority(t.get("priority", "med")), 1),
+            int(t.get("id", 0)),
+        ),
+    )
+
+
+def append_support_ticket_task(state: AppState, memo: str, priority: str = "med") -> tuple[Path, int]:
+    path = support_ticket_store_path()
+    store = _load_support_ticket_store(path)
+    task_id = int(store.get("next_id", 1))
+    now = datetime.now(timezone.utc).isoformat()
+    task = {
+        "id": task_id,
+        "memo": memo,
+        "priority": normalize_priority(priority),
+        "status": "open",
+        "created_utc": now,
+        "updated_utc": now,
+        "completed_utc": None,
+        "sent_to_copilot_utc": None,
+        "state": _state_snapshot(state),
+    }
+
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        tasks = []
+    tasks.append(task)
+    store["tasks"] = _sorted_tasks(tasks)
+    store["next_id"] = task_id + 1
+    _write_support_ticket_store(path, store)
+    return path, task_id
+
+
+def list_support_ticket_tasks() -> tuple[Path, list[dict[str, Any]]]:
+    path = support_ticket_store_path()
+    store = _load_support_ticket_store(path)
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        tasks = []
+    return path, _sorted_tasks(tasks)
+
+
+def update_support_ticket_task(task_id: int, new_memo: str, new_priority: str | None = None) -> tuple[Path, bool]:
+    path = support_ticket_store_path()
+    store = _load_support_ticket_store(path)
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        return path, False
+
+    now = datetime.now(timezone.utc).isoformat()
+    changed = False
+    for task in tasks:
+        if int(task.get("id", 0)) == task_id:
+            task["memo"] = new_memo
+            if new_priority is not None:
+                task["priority"] = normalize_priority(new_priority)
+            task["updated_utc"] = now
+            changed = True
+            break
+
+    if changed:
+        store["tasks"] = _sorted_tasks(tasks)
+        _write_support_ticket_store(path, store)
+    return path, changed
+
+
+def complete_support_ticket_task(task_id: int) -> tuple[Path, bool]:
+    path = support_ticket_store_path()
+    store = _load_support_ticket_store(path)
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        return path, False
+
+    now = datetime.now(timezone.utc).isoformat()
+    changed = False
+    for task in tasks:
+        if int(task.get("id", 0)) == task_id:
+            task["status"] = "done"
+            task["updated_utc"] = now
+            task["completed_utc"] = now
+            changed = True
+            break
+
+    if changed:
+        store["tasks"] = _sorted_tasks(tasks)
+        _write_support_ticket_store(path, store)
+    return path, changed
+
+
+def reopen_support_ticket_task(task_id: int) -> tuple[Path, bool]:
+    path = support_ticket_store_path()
+    store = _load_support_ticket_store(path)
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        return path, False
+
+    now = datetime.now(timezone.utc).isoformat()
+    changed = False
+    for task in tasks:
+        if int(task.get("id", 0)) == task_id:
+            task["status"] = "open"
+            task["updated_utc"] = now
+            task["completed_utc"] = None
+            changed = True
+            break
+
+    if changed:
+        store["tasks"] = _sorted_tasks(tasks)
+        _write_support_ticket_store(path, store)
+    return path, changed
+
+
+def delete_support_ticket_task(task_id: int) -> tuple[Path, bool]:
+    path = support_ticket_store_path()
+    store = _load_support_ticket_store(path)
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        return path, False
+
+    original_len = len(tasks)
+    tasks = [task for task in tasks if int(task.get("id", 0)) != task_id]
+    changed = len(tasks) != original_len
+
+    if changed:
+        store["tasks"] = _sorted_tasks(tasks)
+        _write_support_ticket_store(path, store)
+    return path, changed
+
+
+def unsend_support_ticket_task(task_id: int) -> tuple[Path, bool]:
+    path = support_ticket_store_path()
+    store = _load_support_ticket_store(path)
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        return path, False
+
+    now = datetime.now(timezone.utc).isoformat()
+    changed = False
+    for task in tasks:
+        if int(task.get("id", 0)) == task_id:
+            task["sent_to_copilot_utc"] = None
+            task["updated_utc"] = now
+            changed = True
+            break
+
+    if changed:
+        store["tasks"] = _sorted_tasks(tasks)
+        _write_support_ticket_store(path, store)
+    return path, changed
+
+
+def parse_task_ids(raw_ids: str) -> list[int]:
+    values: list[int] = []
+    for token in raw_ids.split(","):
+        cleaned = token.strip()
+        if cleaned.isdigit():
+            values.append(int(cleaned))
+    return values
+
+
+def send_tasks_to_copilot(raw_ids: str) -> tuple[Path, Path, int]:
+    store_path = support_ticket_store_path()
+    queue_path = store_path.parent / SUPPORT_COPILOT_QUEUE_FILE
+
+    store = _load_support_ticket_store(store_path)
+    tasks = store.get("tasks", [])
+    if not isinstance(tasks, list):
+        tasks = []
+
+    selected_ids = parse_task_ids(raw_ids)
+    if selected_ids:
+        selected = [task for task in tasks if int(task.get("id", 0)) in selected_ids]
+    else:
+        selected = [task for task in tasks if str(task.get("status", "open")) == "open"]
+
+    if not selected:
+        return store_path, queue_path, 0
+
+    now = datetime.now(timezone.utc).isoformat()
+    lines = [
+        f"\n## Copilot Handoff {now}",
+        "",
+        "Use the tasks below as implementation items:",
+        "",
+    ]
+    for task in selected:
+        task_id = int(task.get("id", 0))
+        memo = str(task.get("memo", "")).strip()
+        status = str(task.get("status", "open"))
+        checkbox = "x" if status == "done" else " "
+        lines.append(f"- [{checkbox}] #{task_id}: {memo}")
+
+    with queue_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+
+    selected_id_set = {int(task.get("id", 0)) for task in selected}
+    for task in tasks:
+        if int(task.get("id", 0)) in selected_id_set:
+            task["sent_to_copilot_utc"] = now
+            task["updated_utc"] = now
+
+    store["tasks"] = _sorted_tasks(tasks)
+    _write_support_ticket_store(store_path, store)
+    return store_path, queue_path, len(selected)
+
+
+def _print_support_tasks(tasks: list[dict[str, Any]]) -> None:
+    if not tasks:
+        print("No support tasks yet.")
+        return
+    print("ID | Pri  | Status | Sent | Memo")
+    print("--------------------------------")
+    for task in tasks:
+        task_id = int(task.get("id", 0))
+        priority = normalize_priority(task.get("priority", "med"))
+        status = str(task.get("status", "open"))
+        sent = "Y" if task.get("sent_to_copilot_utc") else "N"
+        memo = str(task.get("memo", "")).strip()
+        print(f"{task_id:>2} | {priority:<4} | {status:<6} | {sent:<4} | {memo}")
+
+
+def prompt_support_ticket_manager(fd: int, old_settings: Any, state: AppState) -> None:
+    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    try:
+        print("\nSupport tasks: [a]dd [l]ist [e]dit [d]one [r]eopen [x]delete [s]end [u]unsend [q]cancel")
+        action = (input("Action (default a): ").strip().lower() or "a")
+
+        if action == "l":
+            path, tasks = list_support_ticket_tasks()
+            _print_support_tasks(tasks)
+            print(f"File: {path}")
+        elif action == "e":
+            raw_id = input("Task ID to edit: ").strip()
+            new_memo = input("Updated memo: ").strip()
+            new_priority = input("Updated priority (high/med/low, blank=keep): ").strip().lower()
+            if raw_id.isdigit() and new_memo:
+                path, changed = update_support_ticket_task(
+                    int(raw_id),
+                    new_memo,
+                    new_priority if new_priority else None,
+                )
+                if changed:
+                    print(f"Support task updated in: {path}")
+                else:
+                    print("Task ID not found.")
+            else:
+                print("Edit canceled (invalid ID or empty memo).")
+        elif action == "d":
+            raw_id = input("Task ID to mark done: ").strip()
+            if raw_id.isdigit():
+                path, changed = complete_support_ticket_task(int(raw_id))
+                if changed:
+                    print(f"Support task marked done in: {path}")
+                else:
+                    print("Task ID not found.")
+            else:
+                print("Done action canceled (invalid ID).")
+        elif action == "r":
+            raw_id = input("Task ID to reopen: ").strip()
+            if raw_id.isdigit():
+                path, changed = reopen_support_ticket_task(int(raw_id))
+                if changed:
+                    print(f"Support task reopened in: {path}")
+                else:
+                    print("Task ID not found.")
+            else:
+                print("Reopen canceled (invalid ID).")
+        elif action == "x":
+            raw_id = input("Task ID to delete: ").strip()
+            if raw_id.isdigit():
+                path, changed = delete_support_ticket_task(int(raw_id))
+                if changed:
+                    print(f"Support task deleted from: {path}")
+                else:
+                    print("Task ID not found.")
+            else:
+                print("Delete canceled (invalid ID).")
+        elif action == "s":
+            raw_ids = input("Task IDs to send (comma-separated, blank=open tasks): ").strip()
+            store_path, queue_path, sent_count = send_tasks_to_copilot(raw_ids)
+            if sent_count > 0:
+                print(f"Sent {sent_count} task(s) to Copilot queue: {queue_path}")
+                print(f"Task store updated: {store_path}")
+            else:
+                print("No matching tasks to send.")
+        elif action == "u":
+            raw_id = input("Task ID to unsend: ").strip()
+            if raw_id.isdigit():
+                path, changed = unsend_support_ticket_task(int(raw_id))
+                if changed:
+                    print(f"Support task unsent in: {path}")
+                else:
+                    print("Task ID not found.")
+            else:
+                print("Unsend canceled (invalid ID).")
+        elif action == "q":
+            print("Support manager canceled.")
+        else:
+            memo = input("Support task memo: ").strip()
+            priority = input("Priority (high/med/low, default med): ").strip().lower() or "med"
+            if memo:
+                path, task_id = append_support_ticket_task(state, memo, priority)
+                print(f"Support task #{task_id} saved: {path}")
+            else:
+                print("Support task canceled (empty memo).")
+    except (KeyboardInterrupt, EOFError):
+        print("Support manager canceled.")
+    finally:
+        tty.setcbreak(fd)
 
 
 def build_nohup_command(state: AppState, options: RunOptions) -> str:
@@ -556,15 +1058,11 @@ def build_nohup_command(state: AppState, options: RunOptions) -> str:
     return " ".join(command)
 
 
-def handle_key(state: AppState, options: RunOptions, key: str) -> bool:
+def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_settings: Any) -> bool:
     allowed = available_patterns(state.emergency_only)
 
     if key in allowed:
         state.pattern = key
-        print_status(state)
-        return True
-    if key == "p":
-        state.pattern = cycle_choice(state.pattern, allowed)
         print_status(state)
         return True
     if key == "s":
@@ -592,6 +1090,19 @@ def handle_key(state: AppState, options: RunOptions, key: str) -> bool:
         return True
     if key == "h":
         print(SHORTCUTS_TEXT)
+        print_status(state)
+        return True
+    if key == "ALT_F1":
+        prompt_support_ticket_manager(fd, old_settings, state)
+        print_status(state)
+        return True
+    if key == "F1" and "TMUX" not in os.environ:
+        # Outside tmux, allow F1 as alias in terminals that collapse Alt+F1.
+        prompt_support_ticket_manager(fd, old_settings, state)
+        print_status(state)
+        return True
+    if key == "\r":
+        prompt_support_ticket_manager(fd, old_settings, state)
         print_status(state)
         return True
     if key == "\x0f":
@@ -650,7 +1161,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
         tty.setcbreak(fd)
         while True:
             key = maybe_read_key()
-            if key is not None and not handle_key(state, options, key):
+            if key is not None and not handle_key(state, options, key, fd, old_settings):
                 break
 
             apply_pi_input_response(state)
@@ -756,7 +1267,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
 
     state = AppState(
         pattern=as_str(data.get("pattern"), "1"),
-        speed=as_str(data.get("speed"), "2"),
+        speed=as_str(data.get("speed"), "5"),
         chase_color=as_str(data.get("chase_color"), "1"),
         random_palette=as_str(data.get("random_palette"), "1"),
         bounce_color=as_str(data.get("bounce_color"), "1"),
@@ -778,7 +1289,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
     if state.pattern not in PATTERN_NAMES:
         state.pattern = "1"
     if state.speed not in SPEED_LABELS:
-        state.speed = "2"
+        state.speed = "5"
     if state.chase_color not in CHASE_COLORS:
         state.chase_color = "1"
     if state.random_palette not in RANDOM_PALETTES:
@@ -840,7 +1351,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     print("4. Emergency SOS")
 
     pattern = ask_choice("Enter pattern", "1", PATTERN_NAMES)
-    speed = ask_choice("Enter speed (1=Slow, 2=Medium, 3=Fast)", "2", SPEED_LABELS)
+    speed = ask_choice("Enter speed (0=Constant, 1..9=Level)", "5", SPEED_LABELS)
     chase_color = ask_choice("Chase color (1=Orange, 2=Green, 3=Blue, 4=Rainbow)", "1", CHASE_COLORS)
     random_palette = ask_choice("Random mode (1=Any RGB, 2=Warm, 3=Cool)", "1", RANDOM_PALETTES)
     bounce_color = ask_choice("Bounce color (1=Blue, 2=Purple, 3=White, 4=Rainbow)", "1", BOUNCE_COLORS)
@@ -888,7 +1399,7 @@ def parse_args() -> argparse.Namespace:
         epilog=(
             "Switch options:\n"
             "  --pattern {1,2,3,4}        Startup pattern\n"
-            "  --speed {1,2,3}            Startup speed (1=Slow, 2=Medium, 3=Fast)\n"
+            "  --speed {0,1,2,3,4,5,6,7,8,9}  Startup speed (0=Constant, 1..9=levels)\n"
             "  --chase-color {1,2,3,4}    Chase color option\n"
             "  --random-palette {1,2,3}   Random palette option\n"
             "  --bounce-color {1,2,3,4}   Bounce color option\n"
@@ -903,18 +1414,19 @@ def parse_args() -> argparse.Namespace:
             "  --headless                 Load settings from separate JSON\n"
             "  --headless-config FILE     JSON settings path\n"
             "  --emergency-only           Panic flash SOS only mode\n"
+            "  --support-export [IDS]     Export task(s) to Copilot queue (IDs comma-separated, blank=open)\n"
             "  --test                     Safe ASCII simulation (no hardware)\n"
             "  --frames N                 Stop after N frames (useful for tests)\n"
             "\n"
             "Shortcuts during run:\n"
-            "  1/2/3/4 switch pattern, p cycle pattern, s speed, c color option, +/- brightness, h help, q quit\n"
+            "  1/2/3/4 switch pattern, s speed, c color option, +/- brightness, Alt+F1 support manager (add/edit/done/send/unsend), Ctrl+M fallback, Ctrl+O nohup, h help, q quit\n"
             "\n"
             "Defined output example:\n"
             f"{OUTPUT_EXAMPLE_TEXT}"
         ),
     )
     parser.add_argument("--pattern", choices=["1", "2", "3", "4"], help="Startup pattern")
-    parser.add_argument("--speed", choices=["1", "2", "3"], help="Startup speed")
+    parser.add_argument("--speed", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup speed")
     parser.add_argument("--chase-color", choices=["1", "2", "3", "4"], help="Chase color option")
     parser.add_argument("--random-palette", choices=["1", "2", "3"], help="Random palette option")
     parser.add_argument("--bounce-color", choices=["1", "2", "3", "4"], help="Bounce color option")
@@ -931,6 +1443,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--headless", action="store_true", help="Load settings from JSON and run without prompts")
     parser.add_argument("--headless-config", default=HEADLESS_DEFAULT_CONFIG, help="Path to headless JSON settings file")
     parser.add_argument("--emergency-only", action="store_true", help="Run panic-flash SOS mode only")
+    parser.add_argument(
+        "--support-export",
+        nargs="?",
+        const="",
+        help="Send support task IDs to Copilot queue markdown (blank sends all open tasks)",
+    )
     parser.add_argument(
         "--show-shortcuts",
         action="store_true",
@@ -971,7 +1489,7 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
 def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
     state = AppState(
         pattern=args.pattern or "1",
-        speed=args.speed or "2",
+        speed=args.speed or "5",
         chase_color=args.chase_color or "1",
         random_palette=args.random_palette or "1",
         bounce_color=args.bounce_color or "1",
@@ -1034,6 +1552,17 @@ def main() -> None:
 
     if args.show_shortcuts:
         print(SHORTCUTS_TEXT)
+        return
+
+    if args.support_export is not None:
+        raw_ids = args.support_export or ""
+        store_path, queue_path, sent_count = send_tasks_to_copilot(raw_ids)
+        if sent_count > 0:
+            print(f"Sent {sent_count} task(s) to Copilot queue: {queue_path}")
+            print(f"Task store updated: {store_path}")
+        else:
+            print("No matching tasks to send.")
+            print(f"Task store: {store_path}")
         return
 
     state: AppState

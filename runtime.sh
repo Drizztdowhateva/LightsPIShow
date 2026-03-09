@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 # WS281X Pattern Runner — simple launcher
 # Usage:
 #   sudo ./runtime.sh                    # prompt for headless option, then start
@@ -6,9 +6,9 @@
 #   sudo ./runtime.sh --headless        # skip prompt, use default headless config
 #   sudo ./runtime.sh --test            # ASCII simulation (no hardware needed)
 
-set -euo pipefail
+set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
