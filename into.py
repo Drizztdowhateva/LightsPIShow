@@ -363,11 +363,11 @@ def print_named_colors() -> None:
 
 SHORTCUTS_TEXT = """
 Runtime shortcuts:
-    1..9 / ← →  Switch pattern (or cycle with arrow keys)
-    (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
+    1..9        Switch pattern directly
+    a / d       Cycle pattern left / right
+    w / s       Brightness up / down
     + / =       Speed up (Level 1-9)
     -           Speed down
-    ↑ / ↓       Brightness up/down
     c           Cycle color option for current pattern
     n           Show named color list
     m / M       Open support task manager (add/edit/done/send/unsend)
@@ -375,14 +375,15 @@ Runtime shortcuts:
     h           Show this shortcuts help again
     q           Quit
     Ctrl+C      Quit
+    (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
 """.strip()
 
 OUTPUT_EXAMPLE_TEXT = """
 Runtime shortcuts:
-    1..9 / ← →  Switch pattern (or cycle with arrow keys)
-    (SOS via --SOS or --pattern -1 in interactive prompt or headless JSON)
+    1..9        Switch pattern directly
+    a / d       Cycle pattern left / right
+    w / s       Brightness up / down
     + / =       Speed up    -  Speed down
-    ↑ / ↓       Brightness up/down
     c           Cycle color option for current pattern
     n           Show named color list
     h           Show this shortcuts help again
@@ -1026,43 +1027,20 @@ def maybe_read_key() -> str | None:
     ready, _, _ = select.select([sys.stdin], [], [], 0)
     if not ready:
         return None
-
     key = sys.stdin.read(1)
-    if key != "\x1b":
-        return key
-
-    # Read the rest of the escape sequence.  Use a 50 ms window — enough for
-    # any real terminal to deliver the full CSI sequence after the ESC byte,
-    # while still being imperceptibly short for the user.
-    sequence = key
-    deadline = time.monotonic() + 0.05
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        ready, _, _ = select.select([sys.stdin], [], [], remaining)
-        if not ready:
-            break
-        ch = sys.stdin.read(1)
-        sequence += ch
-        # Standard arrow keys are exactly 3 bytes: ESC [ A/B/C/D
-        if len(sequence) == 3 and sequence[1] == "[" and sequence[2] in "ABCD":
-            break
-        if len(sequence) >= 8:
-            break
-
-    # Arrow keys: ESC [ A/B/C/D
-    arrow_map = {
-        "\x1b[A": "ARROW_UP",
-        "\x1b[B": "ARROW_DOWN",
-        "\x1b[C": "ARROW_RIGHT",
-        "\x1b[D": "ARROW_LEFT",
-    }
-    if sequence in arrow_map:
-        return arrow_map[sequence]
-
-    # Discard unrecognised escape sequences silently.
-    return None
+    # Swallow bare ESC and CSI sequences so they don't surface as noise.
+    if key == "\x1b":
+        # Drain any following bytes of the escape sequence quietly.
+        while True:
+            r, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if not r:
+                break
+            ch = sys.stdin.read(1)
+            # End of CSI sequence — letter terminates it
+            if ch.isalpha() or ch == "~":
+                break
+        return None
+    return key
 
 
 def support_ticket_store_path() -> Path:
@@ -1532,7 +1510,7 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
     allowed = available_patterns(state.emergency_only)
 
     # Arrow left/right: cycle through non-SOS patterns
-    if key == "ARROW_RIGHT":
+    if key == "d":
         if state.pattern in PATTERN_CYCLE_ORDER:
             idx = PATTERN_CYCLE_ORDER.index(state.pattern)
             state.pattern = PATTERN_CYCLE_ORDER[(idx + 1) % len(PATTERN_CYCLE_ORDER)]
@@ -1540,7 +1518,7 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
             state.pattern = PATTERN_CYCLE_ORDER[0]
         print_status(state)
         return True
-    if key == "ARROW_LEFT":
+    if key == "a":
         if state.pattern in PATTERN_CYCLE_ORDER:
             idx = PATTERN_CYCLE_ORDER.index(state.pattern)
             state.pattern = PATTERN_CYCLE_ORDER[(idx - 1) % len(PATTERN_CYCLE_ORDER)]
@@ -1549,13 +1527,13 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         print_status(state)
         return True
 
-    # Arrow up/down: brightness
-    if key == "ARROW_UP":
+    # w/s: brightness
+    if key == "w":
         state.brightness = clamp_brightness(state.brightness + 16)
         set_strip_brightness(state.brightness)
         print_status(state)
         return True
-    if key == "ARROW_DOWN":
+    if key == "s":
         state.brightness = clamp_brightness(state.brightness - 16)
         set_strip_brightness(state.brightness)
         print_status(state)
