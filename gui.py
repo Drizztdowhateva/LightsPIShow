@@ -78,8 +78,18 @@ NO_COLOR_PATTERNS = {"-1", "7"}
 # Patterns that use the palette ComboBox (Random family)
 PALETTE_PATTERNS = {"2", "4"}
 
-# Patterns that use the named color dropdown (Chase / Bounce)
-NAMED_COLOR_PATTERNS = {"1": into.CHASE_COLORS, "3": into.BOUNCE_COLORS}
+# Patterns that use the named color dropdown (Chase / Bounce / effect patterns)
+NAMED_COLOR_PATTERNS = {
+    "1": into.CHASE_COLORS,
+    "3": into.BOUNCE_COLORS,
+    "5": into.EFFECT_COLORS,
+    "6": into.EFFECT_COLORS,
+    "8": into.EFFECT_COLORS,
+    "9": into.EFFECT_COLORS,
+    "10": into.EFFECT_COLORS,
+    "11": into.EFFECT_COLORS,
+    "12": into.EFFECT_COLORS,
+}
 
 
 # ── helper ───────────────────────────────────────────────────────────────────
@@ -536,9 +546,10 @@ class LightsApp(Gtk.Application):
         rgba = self._color_chooser.get_rgba()
         custom_color = gdk_rgba_to_packed(rgba)
 
-        # Chase / bounce named color
+        # Chase / bounce / effect named color
         chase_color = "1"
         bounce_color = "1"
+        effect_color = "9"
         random_palette = self._palette_combo.get_active_id() or "1"
 
         named_id = self._named_color_combo.get_active_id()
@@ -546,6 +557,8 @@ class LightsApp(Gtk.Application):
             chase_color = named_id or "1"
         elif active_pattern == "3":
             bounce_color = named_id or "1"
+        elif active_pattern in NAMED_COLOR_PATTERNS:
+            effect_color = named_id or "9"
 
         state = into.AppState(
             pattern=active_pattern,
@@ -556,6 +569,7 @@ class LightsApp(Gtk.Application):
             brightness=into.clamp_brightness(bright_val),
             max_brightness=into.clamp_brightness(bright_val),
             custom_color=custom_color,
+            effect_color=effect_color,
         )
         into.normalize_pattern_for_mode(state)
         return state
@@ -698,10 +712,14 @@ class LightsApp(Gtk.Application):
         elif active_pattern == "3":
             if self._running.is_set():
                 self._state.bounce_color = color_id
-        # Show/hide color wheel depending on "Custom" selection
-        show_wheel = (color_id == "5")
+        elif active_pattern in NAMED_COLOR_PATTERNS:
+            if self._running.is_set():
+                self._state.effect_color = color_id
+        # Show/hide color wheel when "Custom" option (value == 0) is selected
+        color_map = NAMED_COLOR_PATTERNS.get(active_pattern, {})
+        chosen_val = color_map.get(color_id, (None, -1))[1] if color_id else -1
         if self._color_chooser_frame:
-            if show_wheel:
+            if chosen_val == 0:
                 self._color_chooser_frame.show()
             else:
                 self._color_chooser_frame.hide()
@@ -740,7 +758,7 @@ class LightsApp(Gtk.Application):
         else:
             self._named_combo_frame.hide()
 
-        # Populate named combo for chase/bounce
+        # Populate named combo for chase/bounce/effect
         if is_named:
             color_map = NAMED_COLOR_PATTERNS[pattern_key]
             self._named_color_combo.remove_all()
@@ -748,7 +766,12 @@ class LightsApp(Gtk.Application):
                 self._named_color_combo.append(k, f"{k}: {name}")
             # Get current selection from state if running
             if self._running.is_set() and self._state:
-                current = self._state.chase_color if pattern_key == "1" else self._state.bounce_color
+                if pattern_key == "1":
+                    current = self._state.chase_color
+                elif pattern_key == "3":
+                    current = self._state.bounce_color
+                else:
+                    current = self._state.effect_color
                 self._named_color_combo.set_active_id(current)
             else:
                 self._named_color_combo.set_active(0)
@@ -759,9 +782,10 @@ class LightsApp(Gtk.Application):
                 pass  # handled by show()/hide() on palette_combo directly
             self._palette_combo.hide()
 
-            # Show wheel only if Custom is selected
+            # Show wheel only if the chosen option is Custom (value == 0)
             named_id = self._named_color_combo.get_active_id()
-            if named_id == "5":
+            chosen_val = color_map.get(named_id, (None, -1))[1] if named_id else -1
+            if chosen_val == 0:
                 self._color_chooser_frame.show()
             else:
                 self._color_chooser_frame.hide()
@@ -772,7 +796,7 @@ class LightsApp(Gtk.Application):
             self._color_chooser_frame.hide()
 
         else:
-            # Direct custom color patterns (Comet, Theater, Pulse, Sparkle, Fire, Meteor, Twinkle)
+            # Direct custom color patterns (none remaining — all effect patterns now use named combo)
             self._palette_combo.hide()
             self._named_color_combo.hide()
             self._color_chooser_frame.show()

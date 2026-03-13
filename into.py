@@ -271,6 +271,19 @@ BOUNCE_COLORS: dict[str, tuple[str, int]] = {
     "5": ("Custom", 0),  # uses state.custom_color
 }
 
+# Shared named color presets for effect patterns (Theater Chase, Comet, Pulse, etc.)
+EFFECT_COLORS: dict[str, tuple[str, int]] = {
+    "1": ("White",   Color(255, 255, 255)),
+    "2": ("Amber",   Color(255, 165,   0)),
+    "3": ("Blue",    Color(  0,   0, 255)),
+    "4": ("Red",     Color(255,   0,   0)),
+    "5": ("Purple",  Color(180,   0, 255)),
+    "6": ("Cyan",    Color(  0, 255, 200)),
+    "7": ("Green",   Color(  0, 255,   0)),
+    "8": ("Gold",    Color(255, 215,   0)),
+    "9": ("Custom",  0),  # uses state.custom_color (0 = pattern built-in default)
+}
+
 # Named colors for CLI custom color selection (name → packed 0xRRGGBB int)
 NAMED_COLORS: dict[str, int] = {
     "red":         Color(255,   0,   0),
@@ -426,6 +439,7 @@ class AppState:
     pulse_step: int = 0
     rainbow_offset: int = 0
     custom_color: int = 0  # packed 0xRRGGBB; 0 = use pattern default
+    effect_color: str = "9"  # key into EFFECT_COLORS; "9" = Custom → custom_color / built-in default
     meteor_position: int = 0
     fire_heat: list = None  # type: ignore[assignment]
     twinkle_pixels: list = None  # type: ignore[assignment]
@@ -682,6 +696,19 @@ def color_to_ascii(color: int) -> str:
     return "B"
 
 
+def resolve_effect_color(state: AppState) -> int:
+    """Return the active effect color for Theater Chase, Comet, Pulse, etc.
+
+    Returns a packed 0xRRGGBB int.  0 means 'use the pattern's built-in default'.
+    When effect_color is "9" (Custom) the raw custom_color value is returned so
+    the pattern falls back to its own default when custom_color is also 0.
+    """
+    if state.effect_color == "9":
+        return state.custom_color
+    entry = EFFECT_COLORS.get(state.effect_color)
+    return entry[1] if entry else state.custom_color
+
+
 def pattern_step_chase(state: AppState) -> None:
     active_strip = get_strip()
     clear_strip(show_now=False)
@@ -772,10 +799,11 @@ def pattern_step_comet(state: AppState) -> None:
     clear_strip(show_now=False)
     try:
         head = state.comet_position % LED_COUNT
-        # Use custom_color base if set, else amber
-        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 255
-        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 165
-        base_b = state.custom_color & 0xFF if state.custom_color else 0
+        eff = resolve_effect_color(state)
+        # Use effect/custom color base if set, else amber
+        base_r = (eff >> 16) & 0xFF if eff else 255
+        base_g = (eff >> 8) & 0xFF if eff else 165
+        base_b = eff & 0xFF if eff else 0
         for trail in range(10):
             idx = (head - trail) % LED_COUNT
             fade = max(0, 255 - trail * 28)
@@ -793,7 +821,8 @@ def pattern_step_theater_chase(state: AppState) -> None:
     active_strip = get_strip()
     clear_strip(show_now=False)
     try:
-        slot_color = state.custom_color if state.custom_color != 0 else Color(200, 200, 220)
+        eff = resolve_effect_color(state)
+        slot_color = eff if eff != 0 else Color(200, 200, 220)
         for i in range(LED_COUNT):
             if (i + state.theater_phase) % 3 == 0:
                 active_strip.setPixelColor(i, slot_color)
@@ -820,10 +849,11 @@ def pattern_step_pulse(state: AppState) -> None:
     try:
         phase = (state.pulse_step % 256) / 255.0
         bright = int((math.sin(phase * math.tau) + 1.0) * 0.5 * 255)
-        if state.custom_color != 0:
-            base_r = (state.custom_color >> 16) & 0xFF
-            base_g = (state.custom_color >> 8) & 0xFF
-            base_b = state.custom_color & 0xFF
+        eff = resolve_effect_color(state)
+        if eff != 0:
+            base_r = (eff >> 16) & 0xFF
+            base_g = (eff >> 8) & 0xFF
+            base_b = eff & 0xFF
             color = Color(int(base_r * bright / 255), int(base_g * bright / 255), int(base_b * bright / 255))
         else:
             color = Color(bright, 0, max(0, bright // 3))
@@ -840,13 +870,14 @@ def pattern_step_sparkle(state: AppState) -> None:
     clear_strip(show_now=False)
     try:
         sparkle_count = max(1, LED_COUNT // 10)
+        eff = resolve_effect_color(state)
         for _ in range(sparkle_count):
             idx = random.randint(0, LED_COUNT - 1)
             twinkle = random.randint(120, 255)
-            if state.custom_color != 0:
-                base_r = (state.custom_color >> 16) & 0xFF
-                base_g = (state.custom_color >> 8) & 0xFF
-                base_b = state.custom_color & 0xFF
+            if eff != 0:
+                base_r = (eff >> 16) & 0xFF
+                base_g = (eff >> 8) & 0xFF
+                base_b = eff & 0xFF
                 color = Color(int(base_r * twinkle / 255), int(base_g * twinkle / 255), int(base_b * twinkle / 255))
             else:
                 color = Color(twinkle, twinkle, twinkle)
@@ -880,9 +911,10 @@ def pattern_step_fire(state: AppState) -> None:
             y = random.randint(0, min(7, LED_COUNT - 1))
             heat[y] = min(255, heat[y] + random.randint(160, 255))
         # Convert heat to color
-        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 255
-        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 80
-        base_b = state.custom_color & 0xFF if state.custom_color else 0
+        eff = resolve_effect_color(state)
+        base_r = (eff >> 16) & 0xFF if eff else 255
+        base_g = (eff >> 8) & 0xFF if eff else 80
+        base_b = eff & 0xFF if eff else 0
         for i in range(LED_COUNT):
             t = heat[i]
             if t < 85:
@@ -909,9 +941,10 @@ def pattern_step_meteor(state: AppState) -> None:
     clear_strip(show_now=False)
     try:
         tail_length = 16
-        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 200
-        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 200
-        base_b = state.custom_color & 0xFF if state.custom_color else 255
+        eff = resolve_effect_color(state)
+        base_r = (eff >> 16) & 0xFF if eff else 200
+        base_g = (eff >> 8) & 0xFF if eff else 200
+        base_b = eff & 0xFF if eff else 255
         for trail in range(tail_length):
             idx = (state.meteor_position - trail) % LED_COUNT
             fade = max(0, 255 - int(trail * 255 / tail_length))
@@ -937,9 +970,10 @@ def pattern_step_twinkle(state: AppState) -> None:
             # Small chance to switch on/off abruptly
             if random.randint(0, 40) == 0:
                 px[i] = random.choice([0, 0, random.randint(160, 255)])
-        base_r = (state.custom_color >> 16) & 0xFF if state.custom_color else 255
-        base_g = (state.custom_color >> 8) & 0xFF if state.custom_color else 255
-        base_b = state.custom_color & 0xFF if state.custom_color else 255
+        eff = resolve_effect_color(state)
+        base_r = (eff >> 16) & 0xFF if eff else 255
+        base_g = (eff >> 8) & 0xFF if eff else 255
+        base_b = eff & 0xFF if eff else 255
         for i in range(LED_COUNT):
             bright = px[i]
             r = int(base_r * bright / 255)
@@ -993,29 +1027,20 @@ def print_status(state: AppState) -> None:
     elif state.pattern == "-1":
         color_name = EMERGENCY_COLORS[state.emergency_color_index][0]
         detail = f"Color: {color_name} | Panic SOS"
-    elif state.pattern == "5":
-        suffix = f" ({custom_color_label()})" if state.custom_color else ""
-        detail = f"Color: Comet Trail{suffix}"
-    elif state.pattern == "6":
-        suffix = f" ({custom_color_label()})" if state.custom_color else ""
-        detail = f"Color: Theater Slots{suffix}"
+    elif state.pattern in {"5", "6", "8", "9", "10", "11", "12"}:
+        effect_name = EFFECT_COLORS.get(state.effect_color, EFFECT_COLORS["9"])[0]
+        eff_val = resolve_effect_color(state)
+        if state.effect_color == "9" and eff_val != 0:
+            # Custom wheel color — show hex swatch
+            r = (eff_val >> 16) & 0xFF
+            g = (eff_val >> 8) & 0xFF
+            b = eff_val & 0xFF
+            swatch = f"\x1b[48;2;{r};{g};{b}m   \x1b[0m" if sys.stdout.isatty() else ""
+            detail = f"Color: {effect_name} ({swatch} #{r:02X}{g:02X}{b:02X})"
+        else:
+            detail = f"Color: {effect_name}"
     elif state.pattern == "7":
         detail = "Color: Full Rainbow"
-    elif state.pattern == "8":
-        suffix = f" ({custom_color_label()})" if state.custom_color else ""
-        detail = f"Color: Pulse{suffix}"
-    elif state.pattern == "9":
-        suffix = f" ({custom_color_label()})" if state.custom_color else ""
-        detail = f"Color: Sparkle{suffix}"
-    elif state.pattern == "10":
-        suffix = f" ({custom_color_label()})" if state.custom_color else ""
-        detail = f"Color: Fire{suffix}"
-    elif state.pattern == "11":
-        suffix = f" ({custom_color_label()})" if state.custom_color else ""
-        detail = f"Color: Meteor{suffix}"
-    elif state.pattern == "12":
-        suffix = f" ({custom_color_label()})" if state.custom_color else ""
-        detail = f"Color: Twinkle{suffix}"
     else:
         detail = ""
 
@@ -1565,6 +1590,8 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
             state.random_palette = cycle_choice(state.random_palette, RANDOM_PALETTES)
         elif state.pattern == "3":
             state.bounce_color = cycle_choice(state.bounce_color, BOUNCE_COLORS)
+        elif state.pattern in {"5", "6", "8", "9", "10", "11", "12"}:
+            state.effect_color = cycle_choice(state.effect_color, EFFECT_COLORS)
         print_status(state)
         return True
     if key == "n":
@@ -1769,6 +1796,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
         analog_max=max(1, as_int(input_data.get("analog_max"), 4095)),
         emergency_only=as_bool(data.get("emergency_only"), False),
         custom_color=as_int(data.get("custom_color"), 0),
+        effect_color=as_str(data.get("effect_color"), "9"),
     )
     options = RunOptions(
         frames=max(0, as_int(run_data.get("frames"), 0)),
@@ -1787,6 +1815,8 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
         state.random_palette = "1"
     if state.bounce_color not in BOUNCE_COLORS:
         state.bounce_color = "1"
+    if state.effect_color not in EFFECT_COLORS:
+        state.effect_color = "9"
     if state.input_mode not in {"off", "digital", "analog"}:
         state.input_mode = "off"
 
@@ -1908,6 +1938,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         analog_max=analog_max,
         emergency_only=emergency_only,
         custom_color=custom_color_val,
+        effect_color="9",
     )
     normalize_pattern_for_mode(state)
     options = RunOptions(
@@ -2057,6 +2088,7 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         analog_max=max(1, args.analog_max if args.analog_max is not None else 4095),
         emergency_only=bool(args.emergency_only or args.sos),
         custom_color=_resolve_custom_color(args),
+        effect_color="9",
     )
     state.brightness = min(state.brightness, state.max_brightness)
     if args.sos:
