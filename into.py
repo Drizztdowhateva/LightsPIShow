@@ -1031,13 +1031,23 @@ def maybe_read_key() -> str | None:
     if key != "\x1b":
         return key
 
-    # Read the full escape sequence to detect arrow keys and other special keys.
+    # Read the rest of the escape sequence.  Use a 50 ms window — enough for
+    # any real terminal to deliver the full CSI sequence after the ESC byte,
+    # while still being imperceptibly short for the user.
     sequence = key
+    deadline = time.monotonic() + 0.05
     while True:
-        ready, _, _ = select.select([sys.stdin], [], [], 0.001)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        ready, _, _ = select.select([sys.stdin], [], [], remaining)
         if not ready:
             break
-        sequence += sys.stdin.read(1)
+        ch = sys.stdin.read(1)
+        sequence += ch
+        # Standard arrow keys are exactly 3 bytes: ESC [ A/B/C/D
+        if len(sequence) == 3 and sequence[1] == "[" and sequence[2] in "ABCD":
+            break
         if len(sequence) >= 8:
             break
 
@@ -1051,7 +1061,7 @@ def maybe_read_key() -> str | None:
     if sequence in arrow_map:
         return arrow_map[sequence]
 
-    # Escape sequences should not interfere with runtime controls.
+    # Discard unrecognised escape sequences silently.
     return None
 
 
