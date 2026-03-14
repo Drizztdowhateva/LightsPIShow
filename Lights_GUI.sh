@@ -11,6 +11,7 @@ cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
 PYTHON="$VENV_DIR/bin/python3"
+SYSTEM_PYTHON=""
 AUTO_YES=0
 
 show_help() {
@@ -77,6 +78,30 @@ ensure_apt_packages() {
     return 1
 }
 
+ensure_virtualenv_tool() {
+    if "$SYSTEM_PYTHON" -m virtualenv --version >/dev/null 2>&1; then
+        return 0
+    fi
+    ensure_apt_packages python3-virtualenv || return 1
+    "$SYSTEM_PYTHON" -m virtualenv --version >/dev/null 2>&1
+}
+
+create_venv() {
+    echo "Creating virtual environment at $VENV_DIR ..."
+    rm -rf "$VENV_DIR"
+
+    if "$SYSTEM_PYTHON" -m venv --system-site-packages "$VENV_DIR" >/dev/null 2>&1 \
+        && [ -f "$VENV_DIR/bin/activate" ] \
+        && [ -x "$VENV_DIR/bin/python3" ]; then
+        return 0
+    fi
+
+    echo "Built-in venv is incomplete on this system; falling back to virtualenv ..."
+    ensure_virtualenv_tool || return 1
+    rm -rf "$VENV_DIR"
+    "$SYSTEM_PYTHON" -m virtualenv --system-site-packages "$VENV_DIR"
+}
+
 ensure_venv_pip() {
     if "$PYTHON" -m pip --version >/dev/null 2>&1; then
         return 0
@@ -93,9 +118,19 @@ ensure_venv_pip() {
         ensure_apt_packages python3-pip python3-setuptools python3-wheel || return 1
     fi
 
+    if "$PYTHON" -m pip --version >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "pip is still unavailable in $VENV_DIR; rebuilding with virtualenv ..." >&2
+    ensure_virtualenv_tool || return 1
+    rm -rf "$VENV_DIR"
+    "$SYSTEM_PYTHON" -m virtualenv --system-site-packages "$VENV_DIR"
+    PYTHON="$VENV_DIR/bin/python3"
+
     if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
         echo "pip is still unavailable in $VENV_DIR." >&2
-        echo "Try recreating the venv: rm -rf .venv && ./Lights_GUI.sh --yes" >&2
+        echo "Please run: sudo apt-get install python3-virtualenv && rm -rf .venv && ./Lights_GUI.sh --yes" >&2
         return 1
     fi
 }
@@ -129,17 +164,21 @@ else
     set --
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
+if [ -x /usr/bin/python3 ]; then
+    SYSTEM_PYTHON="/usr/bin/python3"
+elif command -v python3 >/dev/null 2>&1; then
+    SYSTEM_PYTHON="$(command -v python3)"
+else
     ensure_apt_packages python3 || exit 1
+    SYSTEM_PYTHON="/usr/bin/python3"
 fi
 
-if ! python3 -m venv -h >/dev/null 2>&1; then
+if ! "$SYSTEM_PYTHON" -m venv -h >/dev/null 2>&1; then
     ensure_apt_packages python3-venv || exit 1
 fi
 
-if [ ! -f "$PYTHON" ]; then
-    echo "Creating virtual environment at $VENV_DIR ..."
-    python3 -m venv --system-site-packages "$VENV_DIR"
+if [ ! -x "$PYTHON" ] || [ ! -f "$VENV_DIR/bin/activate" ]; then
+    create_venv || exit 1
 fi
 
 ensure_venv_pip
