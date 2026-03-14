@@ -79,6 +79,29 @@ ensure_apt_packages() {
     return 1
 }
 
+ensure_venv_pip() {
+    if "$PYTHON" -m pip --version >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "pip is missing in $VENV_DIR."
+
+    # Preferred path: bootstrap pip inside the venv via ensurepip.
+    if "$PYTHON" -m ensurepip --version >/dev/null 2>&1; then
+        echo "Bootstrapping pip with ensurepip ..."
+        "$PYTHON" -m ensurepip --upgrade
+    else
+        echo "ensurepip is unavailable; installing system pip packages ..."
+        ensure_apt_packages python3-pip python3-setuptools python3-wheel || return 1
+    fi
+
+    if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+        echo "pip is still unavailable in $VENV_DIR." >&2
+        echo "Try recreating the venv: rm -rf .venv && ./Lights.sh --yes" >&2
+        return 1
+    fi
+}
+
 FILTERED_ARGS=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -136,12 +159,8 @@ fi
 
 PYTHON="$VENV_DIR/bin/python3"
 
-# Some distros create venvs without a pip shim in bin/. Use python -m pip
-# and bootstrap ensurepip when needed.
-if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
-    echo "pip is missing in $VENV_DIR, bootstrapping with ensurepip ..."
-    "$PYTHON" -m ensurepip --upgrade
-fi
+# Some distros create venvs without pip. Try ensurepip first, then apt fallback.
+ensure_venv_pip
 
 # Install / sync dependencies
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then

@@ -77,6 +77,29 @@ ensure_apt_packages() {
     return 1
 }
 
+ensure_venv_pip() {
+    if "$PYTHON" -m pip --version >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "pip is missing in $VENV_DIR."
+
+    # Preferred path: bootstrap pip inside the venv via ensurepip.
+    if "$PYTHON" -m ensurepip --version >/dev/null 2>&1; then
+        echo "Bootstrapping pip with ensurepip ..."
+        "$PYTHON" -m ensurepip --upgrade
+    else
+        echo "ensurepip is unavailable; installing system pip packages ..."
+        ensure_apt_packages python3-pip python3-setuptools python3-wheel || return 1
+    fi
+
+    if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
+        echo "pip is still unavailable in $VENV_DIR." >&2
+        echo "Try recreating the venv: rm -rf .venv && ./Lights_GUI.sh --yes" >&2
+        return 1
+    fi
+}
+
 FILTERED_ARGS=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -119,10 +142,7 @@ if [ ! -f "$PYTHON" ]; then
     python3 -m venv --system-site-packages "$VENV_DIR"
 fi
 
-if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
-    echo "pip is missing in $VENV_DIR, bootstrapping with ensurepip ..."
-    "$PYTHON" -m ensurepip --upgrade
-fi
+ensure_venv_pip
 
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
     if prompt_yes_no "Install/upgrade Python dependencies from requirements.txt? [Y/n]" "Y"; then
