@@ -1,11 +1,8 @@
 #!/usr/bin/env sh
-# Lights PI Show — CLI launcher
+# Lights PI Show — GTK3 GUI launcher (Linux)
 # Usage:
-#   sudo ./Lights.sh                     # interactive setup, then start
-#   sudo ./Lights.sh --pattern 1 ...    # pass args directly to into.py
-#   sudo ./Lights.sh --headless         # skip prompt, use default headless config
-#   sudo ./Lights.sh --SOS              # emergency SOS shortcut
-#   sudo ./Lights.sh --test             # ASCII simulation (no hardware needed)
+#   ./Lights_GUI.sh
+#   ./Lights_GUI.sh --test
 
 set -eu
 
@@ -13,23 +10,24 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
+PYTHON="$VENV_DIR/bin/python3"
 AUTO_YES=0
 
 show_help() {
         cat <<'EOF'
-Lights PI Show CLI launcher
+Lights PI Show GTK launcher (Linux)
 
 Usage:
-    ./Lights.sh [launcher-options] [into.py-options]
+    ./Lights_GUI.sh [launcher-options] [gui.py-options]
 
 Launcher options:
     --yes, -y     Auto-confirm all dependency and pip install prompts
     --help, -h    Show this help and exit
 
 Examples:
-    ./Lights.sh
-    ./Lights.sh --yes --headless --headless-config headless/headless_settings.json
-    ./Lights.sh --test --pattern 5 --speed 6
+    ./Lights_GUI.sh
+    ./Lights_GUI.sh --yes
+    ./Lights_GUI.sh --test
 EOF
 }
 
@@ -108,18 +106,6 @@ else
     set --
 fi
 
-echo "=== Lights PI Show ==="
-echo "Tip: Press O while running to print the background (nohup) launch command."
-echo "     Press q or Ctrl+C to quit."
-echo ""
-
-if [ "$(id -u)" -ne 0 ]; then
-    echo "Note: hardware LED access requires elevated privileges." >&2
-    echo "  • Run with sudo:                sudo ./Lights.sh" >&2
-    echo "  • Or grant capabilities once:   sudo bash setup_permissions.sh" >&2
-    echo ""
-fi
-
 if ! command -v python3 >/dev/null 2>&1; then
     ensure_apt_packages python3 || exit 1
 fi
@@ -128,33 +114,31 @@ if ! python3 -m venv -h >/dev/null 2>&1; then
     ensure_apt_packages python3-venv || exit 1
 fi
 
-# Create virtual environment if it doesn't exist
-if [ ! -f "$VENV_DIR/bin/python3" ]; then
+if [ ! -f "$PYTHON" ]; then
     echo "Creating virtual environment at $VENV_DIR ..."
     python3 -m venv --system-site-packages "$VENV_DIR"
 fi
 
-PYTHON="$VENV_DIR/bin/python3"
-
-# Some distros create venvs without a pip shim in bin/. Use python -m pip
-# and bootstrap ensurepip when needed.
 if ! "$PYTHON" -m pip --version >/dev/null 2>&1; then
     echo "pip is missing in $VENV_DIR, bootstrapping with ensurepip ..."
     "$PYTHON" -m ensurepip --upgrade
 fi
 
-# Install / sync dependencies
 if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
     if prompt_yes_no "Install/upgrade Python dependencies from requirements.txt? [Y/n]" "Y"; then
         "$PYTHON" -m pip install -r "$SCRIPT_DIR/requirements.txt"
     fi
 fi
 
-# If arguments are provided, pass them directly to into.py.
-# Otherwise, run interactively so the user is prompted for the headless option
-# before the runtime shortcuts are displayed.
-if [ "$#" -gt 0 ]; then
-    exec "$PYTHON" into.py "$@"
-else
-    exec "$PYTHON" into.py
+# GTK3/PyGObject are system packages on Linux (not installed via pip)
+if ! "$PYTHON" -c 'import gi; gi.require_version("Gtk", "3.0"); from gi.repository import Gtk' >/dev/null 2>&1; then
+    ensure_apt_packages python3-gi python3-gi-cairo gir1.2-gtk-3.0 || exit 1
+
+    if ! "$PYTHON" -c 'import gi; gi.require_version("Gtk", "3.0"); from gi.repository import Gtk' >/dev/null 2>&1; then
+        echo "GTK3 / PyGObject still unavailable after install." >&2
+        echo "Try recreating .venv or run with system python: python3 gui.py" >&2
+        exit 1
+    fi
 fi
+
+exec "$PYTHON" gui.py "$@"

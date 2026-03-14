@@ -11,9 +11,11 @@ Run:
 from __future__ import annotations
 
 import math
+import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +57,9 @@ PREVIEW_COLS = 20          # LEDs per row in the preview grid
 PREVIEW_CELL = 18          # px per LED circle (diameter)
 PREVIEW_PAD  = 3           # px gap between circles
 PREVIEW_FPS  = 25          # target refresh rate for the preview
+APP_VERSION = "0.1.0"
+APP_WEBSITE = "https://github.com/Drizztdowhateva/Lights_Pi_Show"
+DONATE_URL = "https://cash.app/$teerRight"
 
 PATTERN_TOOLTIPS: dict[str, str] = {
     "-1": "Emergency SOS — alternating Red/Blue/White panic flash in Morse SOS pattern.",
@@ -173,10 +178,15 @@ class LightsApp(Gtk.Application):
         self._test_check: Gtk.CheckButton | None = None
         self._stack: Gtk.Stack | None = None
         self._preview: LEDPreview | None = None
+        self._main_window: Gtk.ApplicationWindow | None = None
 
     # ── Gtk.Application lifecycle ────────────────────────────────────────────
 
     def do_activate(self) -> None:
+        if self._main_window is not None:
+            self._main_window.present()
+            return
+
         win = Gtk.ApplicationWindow(application=self)
         win.set_title("Lights PI Show")
         win.set_default_size(860, 640)
@@ -189,8 +199,54 @@ class LightsApp(Gtk.Application):
             Gtk.Window.set_default_icon(icon)
 
         self._build_ui(win)
-        win.show_all()
+        win.hide()
+        self._main_window = win
+        self._show_splash_then_main(win)
         self._apply_css()
+
+    def _show_splash_then_main(self, main_window: Gtk.ApplicationWindow) -> None:
+        splash = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
+        splash.set_decorated(False)
+        splash.set_position(Gtk.WindowPosition.CENTER)
+        splash.set_default_size(560, 300)
+
+        icon = _load_app_icon()
+        if icon:
+            splash.set_icon(icon)
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        outer.set_margin_top(28)
+        outer.set_margin_bottom(28)
+        outer.set_margin_start(28)
+        outer.set_margin_end(28)
+
+        if icon:
+            logo = Gtk.Image.new_from_pixbuf(icon.scale_simple(96, 96, GdkPixbuf.InterpType.BILINEAR))
+            outer.pack_start(logo, False, False, 0)
+
+        title = Gtk.Label(label="Lights PI Show")
+        title.set_markup('<span size="24000" weight="bold">Lights PI Show</span>')
+        title.set_xalign(0.5)
+        outer.pack_start(title, False, False, 0)
+
+        version = Gtk.Label(label=f"Version {APP_VERSION}")
+        version.set_xalign(0.5)
+        outer.pack_start(version, False, False, 0)
+
+        author = Gtk.Label(label="Copyright (c) 2026 Drizztdowhateva")
+        author.set_xalign(0.5)
+        outer.pack_start(author, False, False, 0)
+
+        splash.add(outer)
+        splash.show_all()
+
+        def _finish_splash() -> bool:
+            splash.destroy()
+            main_window.show_all()
+            main_window.present()
+            return False
+
+        GLib.timeout_add(2000, _finish_splash)
 
     # ── CSS ──────────────────────────────────────────────────────────────────
 
@@ -230,6 +286,9 @@ class LightsApp(Gtk.Application):
         help_btn.connect("clicked", lambda _: self._stack.set_visible_child_name("welcome"))
         header.pack_end(help_btn)
 
+        menubar = self._build_menubar(win)
+        vbox.pack_start(menubar, False, False, 0)
+
         # Stack: welcome / main
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
@@ -246,6 +305,69 @@ class LightsApp(Gtk.Application):
         self._status_label.set_xalign(0)
         self._status_label.set_margin_start(8)
         vbox.pack_end(self._status_label, False, False, 0)
+
+    def _build_menubar(self, win: Gtk.ApplicationWindow) -> Gtk.MenuBar:
+        menubar = Gtk.MenuBar()
+
+        help_item = Gtk.MenuItem(label="Help")
+        help_item.set_tooltip_text("Open documentation, support links, and application details")
+        help_menu = Gtk.Menu()
+
+        docs_item = Gtk.MenuItem(label="Documentation")
+        docs_item.set_tooltip_text("Open the local docs folder or the project website")
+        docs_item.connect("activate", self._on_open_docs)
+        help_menu.append(docs_item)
+
+        donate_item = Gtk.MenuItem(label="Donate / Support the Developer")
+        donate_item.set_tooltip_text("Support development through the configured donation page")
+        donate_item.connect("activate", self._on_open_donate)
+        help_menu.append(donate_item)
+
+        help_menu.append(Gtk.SeparatorMenuItem())
+
+        about_item = Gtk.MenuItem(label="About")
+        about_item.set_tooltip_text("Show application information and license details")
+        about_item.connect("activate", self._on_show_about, win)
+        help_menu.append(about_item)
+
+        help_item.set_submenu(help_menu)
+        menubar.append(help_item)
+        return menubar
+
+    def _open_path(self, path: Path) -> None:
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", str(path)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                webbrowser.open(path.as_uri(), new=2)
+        except Exception:
+            webbrowser.open(APP_WEBSITE, new=2)
+
+    def _on_open_docs(self, _item: Gtk.MenuItem) -> None:
+        docs_dir = Path(__file__).parent / "docs"
+        if docs_dir.exists():
+            self._open_path(docs_dir)
+            return
+        webbrowser.open(APP_WEBSITE, new=2)
+
+    def _on_open_donate(self, _item: Gtk.MenuItem) -> None:
+        webbrowser.open(DONATE_URL, new=2)
+
+    def _on_show_about(self, _item: Gtk.MenuItem, parent: Gtk.ApplicationWindow) -> None:
+        dialog = Gtk.AboutDialog(transient_for=parent, modal=True)
+        dialog.set_program_name("Lights PI Show")
+        dialog.set_version(APP_VERSION)
+        dialog.set_comments("WS281X LED pattern controller with GTK interface and live preview.")
+        dialog.set_authors(["Drizztdowhateva"])
+        dialog.set_license_type(Gtk.License.MIT_X11)
+        dialog.set_website(APP_WEBSITE)
+        icon = _load_app_icon()
+        if icon:
+            dialog.set_logo(icon)
+        dialog.run()
+        dialog.destroy()
 
     # ── welcome page ─────────────────────────────────────────────────────────
 
@@ -590,14 +712,18 @@ class LightsApp(Gtk.Application):
         # Set the global strip used by pattern functions
         if test_mode:
             into.strip = self._virtual_strip
+            self._set_status("Running in simulation mode (--test / checkbox enabled).")
         else:
             try:
                 into.init_strip()
                 into.get_strip().begin()
             except RuntimeError as exc:
-                self._set_status(f"Hardware error: {exc}")
-                self._test_check.set_active(True)
-                into.strip = self._virtual_strip
+                self._set_status(
+                    "Hardware init failed. Run with sudo or setup_permissions.sh, "
+                    "or enable Test mode manually."
+                )
+                print(f"Hardware init failed: {exc}", file=sys.stderr)
+                return
 
         self._virtual_strip.pixels = [into.Color(0, 0, 0)] * into.LED_COUNT
         into.apply_brightness_from_state(state)

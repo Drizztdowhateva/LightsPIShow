@@ -31,6 +31,7 @@ WS281X LED pattern controller with a GTK3 graphical interface, a full CLI, safe 
 - **8 random palettes** — Any RGB, Warm, Cool, Pastel, Neon, Ocean, Fire, Forest
 - **Custom color** — named color presets + full 256-color HSV wheel for non-rainbow patterns
 - **CLI** — full keyboard control with arrow keys, speed/brightness hotkeys, named color discovery
+- **Smart launchers** — `Lights.sh` and `Lights_GUI.sh` check dependencies, prompt to install missing packages, and support `--yes` for non-interactive setup
 - **Headless JSON** — save/load LED configs for background and scheduled runs
 - **Distribution builds** — AppImage (Linux), EXE (Windows), DMG (macOS) via `runtimes/runtime_package.py`
 - **Simulation mode** — `--test` / `python3 gui.py --test` runs without any hardware
@@ -67,6 +68,13 @@ cd Lights_PI_Show
 sudo ./Lights.sh
 ```
 
+Launcher help and non-interactive mode:
+
+```bash
+./Lights.sh --help
+./Lights.sh --yes --headless --headless-config headless/headless_settings.json
+```
+
 Or manually:
 
 ```bash
@@ -78,7 +86,16 @@ sudo .venv/bin/python3 into.py
 
 ### GUI (GTK3)
 
-Install the GTK3 system packages (not available via pip):
+Use the Linux launcher (recommended). It manages `.venv`, checks GTK dependencies,
+prompts to install missing packages, and can auto-confirm with `--yes`:
+
+```bash
+./Lights_GUI.sh
+./Lights_GUI.sh --help
+./Lights_GUI.sh --yes
+```
+
+Manual GTK package install (if needed):
 
 ```bash
 # Debian / Ubuntu / Raspberry Pi OS
@@ -94,17 +111,26 @@ pacman -S mingw-w64-x86_64-gtk3 mingw-w64-x86_64-python-gobject
 Then run:
 
 ```bash
-python3 gui.py
+./Lights_GUI.sh
 ```
 
 ## GUI Quick Start
 
 ```bash
 # Simulation mode — no hardware needed
-python3 gui.py --test
+./Lights_GUI.sh --test
 
 # Hardware mode
-sudo python3 gui.py
+./Lights_GUI.sh
+```
+
+On Raspberry Pi/Linux, the GUI does not auto-switch into simulation mode.
+If hardware access fails, it shows an error and asks you to run with privileges
+or enable test mode explicitly.
+
+```bash
+sudo ./Lights_GUI.sh
+sudo bash setup_permissions.sh
 ```
 
 1. Welcome screen → click **Get Started**
@@ -235,6 +261,7 @@ Lights_PI_Show/
 ├── into.py                        # CLI pattern runner (backend)
 ├── gui.py                         # GTK3 graphical interface
 ├── Lights.sh                      # CLI launcher (auto-venv, deps)
+├── Lights_GUI.sh                  # GTK launcher (auto-venv, GTK deps)
 ├── setup_permissions.sh           # Grant hardware capabilities without sudo
 ├── requirements.txt               # Python dependencies
 ├── headless/                      # Saved headless JSON configs
