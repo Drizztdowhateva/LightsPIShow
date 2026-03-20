@@ -207,6 +207,12 @@ class LightsApp(Gtk.Application):
         self._main_window: Gtk.ApplicationWindow | None = None
         self._main_paned: Gtk.Paned | None = None
         self._main_split_ratio: float = 0.40
+        # Schedule widgets
+        self._schedule_check: Gtk.CheckButton | None = None
+        self._schedule_on_entry: Gtk.Entry | None = None
+        self._schedule_off_entry: Gtk.Entry | None = None
+        self._schedule_time_box: Gtk.Box | None = None
+        self._schedule_menu_item: Gtk.CheckMenuItem | None = None
 
     # ── Gtk.Application lifecycle ────────────────────────────────────────────
 
@@ -338,6 +344,37 @@ class LightsApp(Gtk.Application):
     def _build_menubar(self, win: Gtk.ApplicationWindow) -> Gtk.MenuBar:
         menubar = Gtk.MenuBar()
 
+        # ── Time menu ──
+        time_item = Gtk.MenuItem(label="Time")
+        time_item.set_tooltip_text("Configure the ON/OFF time schedule for the lights")
+        time_menu = Gtk.Menu()
+
+        self._schedule_menu_item = Gtk.CheckMenuItem(label="Enable Schedule")
+        self._schedule_menu_item.set_tooltip_text(
+            "Toggle the ON/OFF time schedule.\n"
+            "Uses the local host timezone.\n"
+            "ON/OFF times are also configurable in the left panel."
+        )
+        self._schedule_menu_item.set_active(False)  # DISABLED by default
+        self._schedule_menu_item.connect("toggled", self._on_schedule_menu_toggled)
+        time_menu.append(self._schedule_menu_item)
+
+        time_menu.append(Gtk.SeparatorMenuItem())
+
+        set_on_item = Gtk.MenuItem(label="Set ON Time\u2026")
+        set_on_item.set_tooltip_text("Set the daily ON time (24-hour HH:MM)")
+        set_on_item.connect("activate", self._on_set_on_time, win)
+        time_menu.append(set_on_item)
+
+        set_off_item = Gtk.MenuItem(label="Set OFF Time\u2026")
+        set_off_item.set_tooltip_text("Set the daily OFF time (24-hour HH:MM)")
+        set_off_item.connect("activate", self._on_set_off_time, win)
+        time_menu.append(set_off_item)
+
+        time_item.set_submenu(time_menu)
+        menubar.append(time_item)
+
+        # ── Help menu ──
         help_item = Gtk.MenuItem(label="Help")
         help_item.set_tooltip_text("Open documentation, support links, and application details")
         help_menu = Gtk.Menu()
@@ -362,6 +399,55 @@ class LightsApp(Gtk.Application):
         help_item.set_submenu(help_menu)
         menubar.append(help_item)
         return menubar
+
+    def _on_schedule_menu_toggled(self, item: Gtk.CheckMenuItem) -> None:
+        """Sync the menubar Enable Schedule toggle → left panel checkbox."""
+        if self._schedule_check is not None:
+            self._schedule_check.set_active(item.get_active())
+
+    def _on_set_on_time(self, _item: Gtk.MenuItem, parent: Gtk.ApplicationWindow) -> None:
+        """Open a dialog to set the schedule ON time."""
+        current = self._schedule_on_entry.get_text() if self._schedule_on_entry else "06:00"
+        dialog = Gtk.Dialog(title="Set ON Time", transient_for=parent, modal=True)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                           Gtk.STOCK_OK, Gtk.ResponseType.OK)
+        area = dialog.get_content_area()
+        area.set_spacing(8)
+        area.set_margin_top(12)
+        area.set_margin_bottom(12)
+        area.set_margin_start(12)
+        area.set_margin_end(12)
+        area.pack_start(Gtk.Label(label="ON time (HH:MM, 24-hour):"), False, False, 0)
+        entry = Gtk.Entry()
+        entry.set_text(current)
+        entry.set_max_length(5)
+        area.pack_start(entry, False, False, 0)
+        dialog.show_all()
+        if dialog.run() == Gtk.ResponseType.OK and self._schedule_on_entry:
+            self._schedule_on_entry.set_text(entry.get_text().strip())
+        dialog.destroy()
+
+    def _on_set_off_time(self, _item: Gtk.MenuItem, parent: Gtk.ApplicationWindow) -> None:
+        """Open a dialog to set the schedule OFF time."""
+        current = self._schedule_off_entry.get_text() if self._schedule_off_entry else "22:00"
+        dialog = Gtk.Dialog(title="Set OFF Time", transient_for=parent, modal=True)
+        dialog.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                           Gtk.STOCK_OK, Gtk.ResponseType.OK)
+        area = dialog.get_content_area()
+        area.set_spacing(8)
+        area.set_margin_top(12)
+        area.set_margin_bottom(12)
+        area.set_margin_start(12)
+        area.set_margin_end(12)
+        area.pack_start(Gtk.Label(label="OFF time (HH:MM, 24-hour):"), False, False, 0)
+        entry = Gtk.Entry()
+        entry.set_text(current)
+        entry.set_max_length(5)
+        area.pack_start(entry, False, False, 0)
+        dialog.show_all()
+        if dialog.run() == Gtk.ResponseType.OK and self._schedule_off_entry:
+            self._schedule_off_entry.set_text(entry.get_text().strip())
+        dialog.destroy()
 
     def _open_path(self, path: Path) -> None:
         try:
@@ -561,6 +647,20 @@ class LightsApp(Gtk.Application):
         self._brightness_scale.connect("value-changed", self._on_brightness_changed)
         vbox.pack_start(self._brightness_scale, False, False, 0)
 
+        # ── Color section ──
+        sep2 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep2.set_margin_top(6)
+        vbox.pack_start(sep2, False, False, 0)
+
+        self._color_section = self._build_color_section()
+        vbox.pack_start(self._color_section, False, False, 0)
+
+        # ── Schedule section ──
+        sep_sched = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep_sched.set_margin_top(6)
+        vbox.pack_start(sep_sched, False, False, 0)
+        vbox.pack_start(self._build_schedule_section(), False, False, 0)
+
         # ── Run controls ──
         sep3 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         sep3.set_margin_top(6)
@@ -678,7 +778,88 @@ class LightsApp(Gtk.Application):
         reset_color_btn.connect("clicked", self._on_reset_color_clicked)
         box.pack_start(reset_color_btn, False, False, 0)
 
+    # ── schedule section ─────────────────────────────────────────────────────
+
+    def _build_schedule_section(self) -> Gtk.Box:
+        """Build the ON/OFF time schedule controls (DISABLED by default)."""
+        import time as _time_mod
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+
+        sched_hdr = Gtk.Label(label="SCHEDULE")
+        sched_hdr.get_style_context().add_class("section-header")
+        sched_hdr.set_xalign(0)
+        box.pack_start(sched_hdr, False, False, 0)
+
+        # Detect local timezone name for the label
+        try:
+            tz_name = _time_mod.strftime("%Z")
+        except Exception:
+            tz_name = "local"
+
+        self._schedule_check = Gtk.CheckButton(
+            label=f"Enable ON/OFF time schedule  ({tz_name})"
+        )
+        self._schedule_check.set_active(False)  # DISABLED by default
+        self._schedule_check.set_tooltip_text(
+            "When enabled, the lights will only run inside the ON→OFF time window.\n"
+            "Uses the local host timezone.\n"
+            "Leave DISABLED (default) to run continuously."
+        )
+        self._schedule_check.connect("toggled", self._on_schedule_toggled)
+        box.pack_start(self._schedule_check, False, False, 0)
+
+        # ON / OFF time entries — shown only when schedule is enabled
+        self._schedule_time_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._schedule_time_box.set_margin_start(16)
+
+        on_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        on_lbl = Gtk.Label(label="ON time (HH:MM):")
+        on_lbl.set_xalign(0)
+        on_lbl.set_width_chars(18)
+        self._schedule_on_entry = Gtk.Entry()
+        self._schedule_on_entry.set_text("06:00")
+        self._schedule_on_entry.set_max_length(5)
+        self._schedule_on_entry.set_width_chars(7)
+        self._schedule_on_entry.set_tooltip_text(
+            "Time when the lights turn ON each day (24-hour HH:MM).\n"
+            "Example: 18:00 for 6 PM."
+        )
+        on_row.pack_start(on_lbl, False, False, 0)
+        on_row.pack_start(self._schedule_on_entry, False, False, 0)
+        self._schedule_time_box.pack_start(on_row, False, False, 0)
+
+        off_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        off_lbl = Gtk.Label(label="OFF time (HH:MM):")
+        off_lbl.set_xalign(0)
+        off_lbl.set_width_chars(18)
+        self._schedule_off_entry = Gtk.Entry()
+        self._schedule_off_entry.set_text("22:00")
+        self._schedule_off_entry.set_max_length(5)
+        self._schedule_off_entry.set_width_chars(7)
+        self._schedule_off_entry.set_tooltip_text(
+            "Time when the lights turn OFF each day (24-hour HH:MM).\n"
+            "Example: 23:30 for 11:30 PM.\n"
+            "Overnight spans work: e.g. ON=20:00, OFF=06:00."
+        )
+        off_row.pack_start(off_lbl, False, False, 0)
+        off_row.pack_start(self._schedule_off_entry, False, False, 0)
+        self._schedule_time_box.pack_start(off_row, False, False, 0)
+
+        box.pack_start(self._schedule_time_box, False, False, 0)
+
+        # Start with time fields hidden (schedule disabled by default)
+        self._schedule_time_box.set_visible(False)
+
         return box
+
+    def _on_schedule_toggled(self, btn: Gtk.CheckButton) -> None:
+        """Show/hide time entry rows and sync the menubar checkbox."""
+        active = btn.get_active()
+        if self._schedule_time_box:
+            self._schedule_time_box.set_visible(active)
+        if self._schedule_menu_item:
+            self._schedule_menu_item.set_active(active)
 
     # ── right panel (preview) ─────────────────────────────────────────────────
 
@@ -791,7 +972,26 @@ class LightsApp(Gtk.Application):
 
     def _start_animation(self) -> None:
         state = self._build_state()
-        options = into.RunOptions()
+
+        sched_enabled = (
+            self._schedule_check is not None and self._schedule_check.get_active()
+        )
+        sched_on = (
+            self._schedule_on_entry.get_text().strip()
+            if self._schedule_on_entry is not None
+            else "06:00"
+        ) or "06:00"
+        sched_off = (
+            self._schedule_off_entry.get_text().strip()
+            if self._schedule_off_entry is not None
+            else "22:00"
+        ) or "22:00"
+
+        options = into.RunOptions(
+            schedule_enabled=sched_enabled,
+            schedule_on_time=sched_on,
+            schedule_off_time=sched_off,
+        )
         test_mode = self._test_check.get_active() or self._force_test
 
         # Set the global strip used by pattern functions

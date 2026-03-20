@@ -1,5 +1,5 @@
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, time as dt_time, timezone
 import json
 import math
 import os
@@ -458,6 +458,38 @@ class RunOptions:
     frames: int = 0
     duration_seconds: float = 0.0
     start_delay_seconds: float = 0.0
+    # ON/OFF time schedule — disabled by default; uses local host timezone.
+    schedule_enabled: bool = False
+    schedule_on_time: str = "06:00"   # HH:MM — local time when lights turn ON
+    schedule_off_time: str = "22:00"  # HH:MM — local time when lights turn OFF
+
+
+def is_within_schedule(options: "RunOptions") -> bool:
+    """Return True if the current local time falls inside the ON/OFF window.
+
+    When *options.schedule_enabled* is False (the default) this always returns
+    True so the rest of the codebase behaves exactly as before.
+
+    Overnight spans are handled correctly — e.g. on=20:00, off=06:00 keeps
+    lights on from 8 PM through 6 AM the next morning.
+    """
+    if not options.schedule_enabled:
+        return True
+    try:
+        on_h, on_m = map(int, options.schedule_on_time.split(":"))
+        off_h, off_m = map(int, options.schedule_off_time.split(":"))
+    except (ValueError, AttributeError):
+        return True  # malformed time string — treat as always-on
+    on_t = dt_time(on_h % 24, on_m % 60)
+    off_t = dt_time(off_h % 24, off_m % 60)
+    if on_t == off_t:
+        return True  # zero-length window — always on
+    now = datetime.now().time()
+    if on_t < off_t:
+        # Normal same-day range, e.g. 06:00 → 22:00
+        return on_t <= now < off_t
+    # Overnight span, e.g. 20:00 → 06:00
+    return now >= on_t or now < off_t
 
 
 strip: Any | None = None
@@ -1557,6 +1589,10 @@ def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = F
         command.extend(["--duration-seconds", str(options.duration_seconds)])
     if options.start_delay_seconds > 0:
         command.extend(["--start-delay-seconds", str(options.start_delay_seconds)])
+    if options.schedule_enabled:
+        command.append("--schedule-enable")
+        command.extend(["--schedule-on", options.schedule_on_time])
+        command.extend(["--schedule-off", options.schedule_off_time])
     if state.emergency_only:
         command.append("--emergency-only")
 
@@ -1753,8 +1789,32 @@ def run_loop(state: AppState, options: RunOptions) -> None:
     frame_count = 0
     start_time = time.monotonic()
 
+    _schedule_was_active: bool = True  # tracks whether lights were on last iteration
+
     if not sys.stdin.isatty():
         while True:
+            # ── Schedule gate (non-TTY / headless) ───────────────────────────
+            if options.schedule_enabled and not is_within_schedule(options):
+                if _schedule_was_active:
+                    clear_strip()
+                    print(
+                        f"[Schedule] Outside ON window "
+                        f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                        "Lights OFF. Waiting…"
+                    )
+                    _schedule_was_active = False
+                time.sleep(30)
+                continue
+            if not _schedule_was_active:
+                # Re-entering the ON window — restore brightness and resume.
+                apply_brightness_from_state(state)
+                print(
+                    f"[Schedule] Inside ON window "
+                    f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                    "Lights ON."
+                )
+                _schedule_was_active = True
+
             apply_pi_input_response(state)
             run_pattern_step(state)
 
@@ -1775,6 +1835,30 @@ def run_loop(state: AppState, options: RunOptions) -> None:
             key = maybe_read_key()
             if key is not None and not handle_key(state, options, key, fd, old_settings):
                 break
+
+            # ── Schedule gate (interactive / TTY) ────────────────────────────
+            if options.schedule_enabled and not is_within_schedule(options):
+                if _schedule_was_active:
+                    clear_strip()
+                    sys.stdout.write(
+                        f"\r\n[Schedule] Outside ON window "
+                        f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                        "Lights OFF. Press q to quit.\r\n"
+                    )
+                    sys.stdout.flush()
+                    _schedule_was_active = False
+                # Sleep in 1-second chunks so key input stays responsive.
+                time.sleep(1)
+                continue
+            if not _schedule_was_active:
+                apply_brightness_from_state(state)
+                sys.stdout.write(
+                    f"\r\n[Schedule] Inside ON window "
+                    f"({options.schedule_on_time}–{options.schedule_off_time} local). "
+                    "Lights ON.\r\n"
+                )
+                sys.stdout.flush()
+                _schedule_was_active = True
 
             apply_pi_input_response(state)
             run_pattern_step(state)
@@ -1861,6 +1945,11 @@ def save_headless_config(path: str, state: AppState, options: RunOptions, test_m
             "duration_seconds": options.duration_seconds,
             "start_delay_seconds": options.start_delay_seconds,
         },
+        "schedule": {
+            "enabled": options.schedule_enabled,
+            "on_time": options.schedule_on_time,
+            "off_time": options.schedule_off_time,
+        },
     }
     Path(path).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
@@ -1887,10 +1976,16 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
         custom_color=as_int(data.get("custom_color"), 0),
         effect_color=as_str(data.get("effect_color"), "9"),
     )
+    raw_schedule_data = data.get("schedule")
+    schedule_data = cast(dict[str, Any], raw_schedule_data) if isinstance(raw_schedule_data, dict) else {}
+
     options = RunOptions(
         frames=max(0, as_int(run_data.get("frames"), 0)),
         duration_seconds=max(0.0, as_float(run_data.get("duration_seconds"), 0.0)),
         start_delay_seconds=max(0.0, as_float(run_data.get("start_delay_seconds"), 0.0)),
+        schedule_enabled=as_bool(schedule_data.get("enabled"), False),
+        schedule_on_time=as_str(schedule_data.get("on_time"), "06:00"),
+        schedule_off_time=as_str(schedule_data.get("off_time"), "22:00"),
     )
     test_mode = as_bool(data.get("test"), False)
 
@@ -2061,6 +2156,9 @@ def parse_args() -> argparse.Namespace:
             "  --analog-max N             Analog max value for scaling\n"
             "  --duration-seconds SEC     Stop after SEC (0 disables)\n"
             "  --start-delay-seconds SEC  Delay before animation starts\n"
+            "  --schedule-enable          Enable ON/OFF time schedule (default DISABLED)\n"
+            "  --schedule-on HH:MM        Local time when lights turn ON  (default 06:00)\n"
+            "  --schedule-off HH:MM       Local time when lights turn OFF (default 22:00)\n"
             "  --headless                 Load settings from separate JSON\n"
             "  --headless-config FILE     JSON settings path\n"
             "  --emergency-only           Panic flash SOS only mode\n"
@@ -2100,6 +2198,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--frames", type=int, default=None, help="Stop after N frames (0 runs continuously)")
     parser.add_argument("--duration-seconds", type=float, default=None, help="Stop after duration in seconds")
     parser.add_argument("--start-delay-seconds", type=float, default=None, help="Delay before starting animation")
+    parser.add_argument("--schedule-enable", action="store_true", default=False, help="Enable ON/OFF time schedule (default DISABLED)")
+    parser.add_argument("--schedule-on", default=None, metavar="HH:MM", help="Local time when lights turn ON (default 06:00)")
+    parser.add_argument("--schedule-off", default=None, metavar="HH:MM", help="Local time when lights turn OFF (default 22:00)")
     parser.add_argument("--headless", action="store_true", help="Load settings from JSON and run without prompts")
     parser.add_argument("--headless-config", default=HEADLESS_DEFAULT_CONFIG, help="Path to headless JSON settings file")
     parser.add_argument("--emergency-only", action="store_true", help="Run panic-flash SOS mode only")
@@ -2188,6 +2289,9 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         frames=max(0, args.frames if args.frames is not None else 0),
         duration_seconds=max(0.0, args.duration_seconds if args.duration_seconds is not None else 0.0),
         start_delay_seconds=max(0.0, args.start_delay_seconds if args.start_delay_seconds is not None else 0.0),
+        schedule_enabled=bool(getattr(args, "schedule_enable", False)),
+        schedule_on_time=getattr(args, "schedule_on", None) or "06:00",
+        schedule_off_time=getattr(args, "schedule_off", None) or "22:00",
     )
     return state, options
 
@@ -2224,6 +2328,12 @@ def apply_cli_overrides(state: AppState, options: RunOptions, args: argparse.Nam
         options.duration_seconds = max(0.0, args.duration_seconds)
     if args.start_delay_seconds is not None:
         options.start_delay_seconds = max(0.0, args.start_delay_seconds)
+    if getattr(args, "schedule_enable", False):
+        options.schedule_enabled = True
+    if getattr(args, "schedule_on", None) is not None:
+        options.schedule_on_time = args.schedule_on
+    if getattr(args, "schedule_off", None) is not None:
+        options.schedule_off_time = args.schedule_off
     if args.emergency_only:
         state.emergency_only = True
     if args.sos:

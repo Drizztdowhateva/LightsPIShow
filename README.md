@@ -18,6 +18,7 @@ WS281X LED pattern controller with a GTK3 graphical interface, a full CLI, safe 
 - [Colors and Palettes](#colors-and-palettes)
 - [Runtime Key Controls](#runtime-key-controls)
 - [Headless Configs](#headless-configs)
+- [Schedule (ON/OFF Time)](#schedule-onoff-time)
 - [Building Distributions](#building-distributions)
 - [Project Structure](#project-structure)
 - [Quality and Standards](#quality-and-standards)
@@ -223,6 +224,7 @@ Pre-built configs in `headless/`:
 | `headless_bounce_blue.json` | Blue bounce |
 | `headless_random_warm.json` | Warm random |
 | `headless_emergency_sos_red.json` | Emergency SOS |
+| `headless_schedule_example.json` | Bounce/Blue — ON 18:00 → 23:00 schedule example |
 
 Run headless:
 
@@ -235,6 +237,55 @@ Save current settings to headless JSON:
 ```bash
 python3 into.py --export-headless my_config
 ```
+
+## Schedule (ON/OFF Time)
+
+The lights can be restricted to a daily ON/OFF time window using the **local host timezone**.  
+The schedule is **DISABLED by default** — leaving it off keeps the existing always-on behaviour.
+
+### GUI
+
+1. In the **SCHEDULE** panel (below COLOR), tick **Enable ON/OFF time schedule**.
+2. The ON time and OFF time fields appear — enter 24-hour `HH:MM` values.
+3. Click **▶ Start** as normal. Outside the window the strip goes dark and automatically turns back on when the window opens.
+
+### CLI flags
+
+```bash
+# Run Chase, on every day from 6 PM → 11 PM
+python3 into.py --pattern 1 --schedule-enable --schedule-on 18:00 --schedule-off 23:00
+
+# Overnight span — on from 8 PM until 6 AM the next morning
+python3 into.py --pattern 7 --schedule-enable --schedule-on 20:00 --schedule-off 06:00 --test
+
+# Background (nohup) with schedule — lights on 06:00 → 22:00
+nohup python3 into.py --pattern 3 --speed 4 \
+  --schedule-enable --schedule-on 06:00 --schedule-off 22:00 \
+  > runtime_live.log 2>&1 & echo $! > runtime_live.pid
+```
+
+### Headless JSON
+
+Add a `"schedule"` block to any headless config file (see [`headless/headless_schedule_example.json`](headless/headless_schedule_example.json)):
+
+```json
+"schedule": {
+  "enabled": true,
+  "on_time": "18:00",
+  "off_time": "23:00"
+}
+```
+
+Run it headlessly:
+
+```bash
+sudo ./Lights.sh --headless --headless-config headless/headless_schedule_example.json
+```
+
+**Notes**
+- Times are `HH:MM` in 24-hour format, local host timezone.
+- **Overnight spans** work correctly — e.g. `on_time: "20:00"`, `off_time: "06:00"` keeps the lights on from 8 PM through 6 AM.
+- `"enabled": false` (the default when the key is absent) disables the gate entirely.
 
 ## Building Distributions
 
