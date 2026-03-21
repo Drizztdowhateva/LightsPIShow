@@ -384,6 +384,7 @@ Runtime shortcuts:
     -           Speed down
     c           Cycle color option for current pattern
     n           Show named color list
+    t / T       Set ON/OFF schedule time (enable/disable schedule)
     m / M       Open support task manager (add/edit/done/send/unsend)
     o / O       Print nohup command for current settings
     Ctrl+O      Nohup tools (print and/or save sudo nohup .sh script)
@@ -1625,6 +1626,32 @@ def save_nohup_script(path: Path, command: str) -> Path:
     return path
 
 
+def prompt_schedule_time(fd: int, old_settings: Any, options: RunOptions) -> None:
+    """Interactive prompt to configure the ON/OFF schedule at runtime."""
+    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    try:
+        print(f"\nSchedule is currently {'ENABLED' if options.schedule_enabled else 'DISABLED'}.")
+        if options.schedule_enabled:
+            print(f"  ON time : {options.schedule_on_time}")
+            print(f"  OFF time: {options.schedule_off_time}")
+        enable = ask_yes_no("Enable ON/OFF time schedule?", default=options.schedule_enabled)
+        options.schedule_enabled = enable
+        if enable:
+            raw_on = input(f"Schedule ON time  (HH:MM, 24-hr, current {options.schedule_on_time}): ").strip()
+            if raw_on:
+                options.schedule_on_time = raw_on
+            raw_off = input(f"Schedule OFF time (HH:MM, 24-hr, current {options.schedule_off_time}): ").strip()
+            if raw_off:
+                options.schedule_off_time = raw_off
+            print(f"Schedule enabled: ON={options.schedule_on_time}  OFF={options.schedule_off_time}")
+        else:
+            print("Schedule disabled — lights run continuously.")
+    except (KeyboardInterrupt, EOFError):
+        print("Schedule setup canceled.")
+    finally:
+        tty.setcbreak(fd)
+
+
 def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: RunOptions) -> None:
     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     try:
@@ -1726,6 +1753,10 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         return True
     if key == "h":
         print(SHORTCUTS_TEXT)
+        print_status(state)
+        return True
+    if key in {"t", "T"}:
+        prompt_schedule_time(fd, old_settings, options)
         print_status(state)
         return True
     if key in {"m", "M"}:
