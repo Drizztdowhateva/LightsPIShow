@@ -1879,7 +1879,7 @@ def run_pattern_step(state: AppState) -> None:
     if state.pattern == "1":
         pattern_step_chase(state)
     elif state.pattern == "2":
-        pattern_step_random(state)
+        pattern_step_random_wipe(state)
     elif state.pattern == "4":
         pattern_step_random_wipe(state)
     elif state.pattern == "3":
