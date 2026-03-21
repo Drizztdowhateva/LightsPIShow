@@ -2020,16 +2020,8 @@ def save_headless_config(path: str, state: AppState, options: RunOptions, test_m
 
 
 def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, RunOptions, bool]:
-        # Disallow custom color in headless mode: override any 'Custom' color selection
-        # For chase_color, bounce_color, effect_color: if set to '5' or '9' (Custom), use '4' (Rainbow) or '1' (default)
-        if state.chase_color == "5":
-            state.chase_color = "4"  # Rainbow
-        if state.bounce_color == "5":
-            state.bounce_color = "4"  # Rainbow
-        if state.effect_color == "9":
-            state.effect_color = "3"  # Blue (or pick another default, not custom)
-        if state.custom_color != 0:
-            state.custom_color = 0  # Ignore custom color in headless
+    # Disallow custom color in headless mode: override any 'Custom' color selection
+    # For chase_color, bounce_color, effect_color: if set to '5' or '9' (Custom), use '4' (Rainbow) or '1' (default)
     raw_input_data = data.get("input")
     raw_run_data = data.get("run")
     input_data = cast(dict[str, Any], raw_input_data) if isinstance(raw_input_data, dict) else {}
@@ -2051,6 +2043,17 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
         custom_color=as_int(data.get("custom_color"), 0),
         effect_color=as_str(data.get("effect_color"), "9"),
     )
+
+    # Now override colors if needed
+    if state.chase_color == "5":
+        state.chase_color = "4"  # Rainbow
+    if state.bounce_color == "5":
+        state.bounce_color = "4"  # Rainbow
+    if state.effect_color == "9":
+        state.effect_color = "3"  # Blue (or pick another default, not custom)
+    if state.custom_color != 0:
+        state.custom_color = 0  # Ignore custom color in headless
+
     raw_schedule_data = data.get("schedule")
     schedule_data = cast(dict[str, Any], raw_schedule_data) if isinstance(raw_schedule_data, dict) else {}
 
