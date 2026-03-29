@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime, time as dt_time, timezone
+import atexit
 import json
 import math
 import os
@@ -86,6 +87,74 @@ def available_patterns(emergency_only: bool) -> dict[str, str]:
 def normalize_pattern_for_mode(state: "AppState") -> None:
     if state.emergency_only:
         state.pattern = "-1"
+
+
+def is_pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def ensure_single_instance(force: bool = False) -> None:
+    pid_file = Path(NOHUP_PID_FILE)
+    if pid_file.exists():
+        try:
+            existing_pid = int(pid_file.read_text().strip())
+        except Exception:
+            existing_pid = 0
+
+        if existing_pid > 0 and is_pid_running(existing_pid):
+            if force:
+                print(f"Force-killing existing instance PID {existing_pid}...")
+                try:
+                    os.kill(existing_pid, signal.SIGTERM)
+                except PermissionError:
+                    print(f"Permission denied killing PID {existing_pid}.")
+                    sys.exit(1)
+                except OSError as e:
+                    print(f"Unable to kill PID {existing_pid}: {e}")
+                    sys.exit(1)
+
+                # wait a moment for graceful stop
+                for _ in range(10):
+                    if not is_pid_running(existing_pid):
+                        break
+                    time.sleep(0.25)
+                if is_pid_running(existing_pid):
+                    try:
+                        os.kill(existing_pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+
+                print("Existing instance stopped.")
+            else:
+                print(
+                    f"Another Lights Pi Show instance appears to be running (PID {existing_pid})."
+                    "\nStop it before starting a new one (e.g., kill <pid> or remove runtime_live.pid)."
+                )
+                sys.exit(1)
+
+        try:
+            pid_file.unlink()
+        except FileNotFoundError:
+            pass
+
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+
+    def _cleanup_pid_file() -> None:
+        try:
+            pid_file.unlink()
+        except FileNotFoundError:
+            pass
+
+    atexit.register(_cleanup_pid_file)
+
 
 SPEED_LABELS: dict[str, str] = {
     "0": "Constant",
@@ -1589,7 +1658,7 @@ def prompt_support_ticket_manager(fd: int, old_settings: Any, state: AppState) -
         tty.setcbreak(fd)
 
 
-def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = False) -> str:
+def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = False, force: bool = False) -> str:
     command: list[str] = [
         "nohup",
         sys.executable,
@@ -1641,6 +1710,8 @@ def build_nohup_command(state: AppState, options: RunOptions, use_sudo: bool = F
         command.extend(["--schedule-off", options.schedule_off_time])
     if state.emergency_only:
         command.append("--emergency-only")
+    if force:
+        command.append("--force")
 
     command.extend([">", NOHUP_LOG_FILE, "2>&1", "&", "echo", "$!", ">", NOHUP_PID_FILE])
     if use_sudo:
@@ -1712,13 +1783,16 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     try:
         cmd = build_nohup_command(state, options)
+        cmd_force = build_nohup_command(state, options, force=True)
         sudo_cmd = build_nohup_command(state, options, use_sudo=True)
+        sudo_cmd_force = build_nohup_command(state, options, use_sudo=True, force=True)
         print("\nNohup tools:")
         print("  [p] Print nohup command")
+        print("  [f] Print nohup command with --force")
         print("  [s] Save sudo nohup script (.sh)")
         print("  [b] Both print and save")
         print("  [q] Cancel")
-        choice = (input("Choose option [p/s/b/q] (default p): ").strip().lower() or "p")
+        choice = (input("Choose option [p/f/s/b/q] (default p): ").strip().lower() or "p")
 
         if choice == "q":
             print("Nohup tools canceled.")
@@ -1726,6 +1800,8 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
 
         if choice in {"p", "b"}:
             print_nohup_command_block(cmd)
+        if choice == "f":
+            print_nohup_command_block(cmd_force)
 
         if choice in {"s", "b"}:
             default_path = NOHUP_SCRIPT_FILE
@@ -2361,6 +2437,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--headless", action="store_true", help="Load settings from JSON and run without prompts")
     parser.add_argument("--headless-config", default=HEADLESS_DEFAULT_CONFIG, help="Path to headless JSON settings file")
     parser.add_argument("--emergency-only", action="store_true", help="Run panic-flash SOS mode only")
+    parser.add_argument("--force", "--override", dest="force", action="store_true", help="Force restart by killing existing instance if running")
     parser.add_argument(
         "--support-export",
         nargs="?",
@@ -2562,6 +2639,8 @@ def main() -> None:
         save_headless_config(str(out_path), state, options, test_mode)
         print(f"Exported headless config to: {out_path}")
         return
+
+    ensure_single_instance(force=args.force)
 
     if test_mode:
         print("Running in --test ASCII mode (hardware disabled).")
