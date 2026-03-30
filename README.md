@@ -240,6 +240,15 @@ python3 into.py --export-headless my_config
 
 ## Schedule (ON/OFF Time)
 
+## Ctrl+O Nohup save enhancement
+
+At runtime, press `Ctrl+O` to open the Nohup tools menu. Choosing `s` or `b` now defaults to saving a script as:
+
+- `scripts/nohup_YYYYMMDD_HHMMSS.sh`
+
+And appends a timestamped entry to `scripts/saved_nohup_scripts.log`.
+
+
 The lights can be restricted to a daily ON/OFF time window using the **local host timezone**.  
 The schedule is **DISABLED by default** — leaving it off keeps the existing always-on behaviour.
 

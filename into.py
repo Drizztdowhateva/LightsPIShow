@@ -38,6 +38,10 @@ HEADLESS_DEFAULT_CONFIG = "headless/headless_settings.json"
 NOHUP_LOG_FILE = "runtime_live.log"
 NOHUP_PID_FILE = "runtime_live.pid"
 NOHUP_SCRIPT_FILE = "runtime_live_nohup.sh"
+NOHUP_SCRIPTS_DIR = "scripts"
+NOHUP_SAVED_INDEX_FILE = "scripts/saved_nohup_scripts.log"
+GLOBAL_SCRIPTS_ROOT_ENV = "FMP_GLOBAL_SCRIPTS_DIR"
+GLOBAL_SCRIPTS_SUBDIR = "Lights_Pi_Show"
 SUPPORT_TICKET_DIR = "LessonProg"
 SUPPORT_TICKET_FILE = "support_tickets.json"
 SUPPORT_TICKET_LEGACY_FILE = "support_tickets.jsonl"
@@ -1730,6 +1734,12 @@ def print_nohup_command_block(command: str) -> None:
     sys.stdout.flush()
 
 
+def get_default_nohup_script_path() -> Path:
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = f"nohup_{now}.sh"
+    return Path(NOHUP_SCRIPTS_DIR) / file_name
+
+
 def save_nohup_script(path: Path, command: str) -> Path:
     script = (
         "#!/usr/bin/env bash\n"
@@ -1739,6 +1749,12 @@ def save_nohup_script(path: Path, command: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(script, encoding="utf-8")
     os.chmod(path, 0o750)
+
+    log_dir = Path(NOHUP_SAVED_INDEX_FILE).parent
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with open(NOHUP_SAVED_INDEX_FILE, "a", encoding="utf-8") as log_file:
+        log_file.write(f"{datetime.now().isoformat()} saved:{path}\n")
+
     return path
 
 
@@ -1789,7 +1805,7 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
         print("\nNohup tools:")
         print("  [p] Print nohup command")
         print("  [f] Print nohup command with --force")
-        print("  [s] Save sudo nohup script (.sh)")
+        print("  [s] Save sudo nohup script (.sh) to scripts/ with timestamp")
         print("  [b] Both print and save")
         print("  [q] Cancel")
         choice = (input("Choose option [p/f/s/b/q] (default p): ").strip().lower() or "p")
@@ -1804,7 +1820,7 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
             print_nohup_command_block(cmd_force)
 
         if choice in {"s", "b"}:
-            default_path = NOHUP_SCRIPT_FILE
+            default_path = get_default_nohup_script_path()
             raw_path = input(f"Script path (default {default_path}): ").strip()
             out_path = Path(raw_path or default_path).expanduser()
             saved = save_nohup_script(out_path, sudo_cmd)
