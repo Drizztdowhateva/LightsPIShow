@@ -8,6 +8,7 @@
   "brightness": 255,
   "max_brightness": 255,
   "emergency_only": false,
+  "custom_color": 0,
   "input": {
     "mode": "off",
     "pin": 23,
@@ -18,5 +19,10 @@
     "frames": 0,
     "duration_seconds": 0.0,
     "start_delay_seconds": 0.0
+  },
+  "schedule": {
+    "enabled": false,
+    "on_time": "06:00",
+    "off_time": "22:00"
   }
 }

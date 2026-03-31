@@ -93,6 +93,16 @@ def normalize_pattern_for_mode(state: "AppState") -> None:
         state.pattern = "-1"
 
 
+def has_wlan_or_eth0() -> bool:
+    """Return True if the host has wlan0 or eth0 network interface."""
+    try:
+        net_ifaces = os.listdir("/sys/class/net")
+        # Support old hardware interface names as well, but prioritize explicit eth0/wlan0.
+        return "eth0" in net_ifaces or "wlan0" in net_ifaces
+    except Exception:
+        return False
+
+
 def is_pid_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -560,6 +570,7 @@ class AppState:
     theater_phase: int = 0
     pulse_step: int = 0
     rainbow_offset: int = 0
+    blink_on: bool = False
     custom_color: int = 0  # packed 0xRRGGBB; 0 = use pattern default
     effect_color: str = "9"  # key into EFFECT_COLORS; "9" = Custom → custom_color / built-in default
     meteor_position: int = 0
@@ -584,8 +595,8 @@ class RunOptions:
     start_delay_seconds: float = 0.0
     # ON/OFF time schedule — disabled by default; uses local host timezone.
     schedule_enabled: bool = False
-    schedule_on_time: str = "0600"   # HHMM — local time when lights turn ON (e.g. 1800 for 6pm)
-    schedule_off_time: str = "2200"  # HHMM — local time when lights turn OFF (e.g. 600 for 6am)
+    schedule_on_time: str = "1800"   # HHMM — local time when lights turn ON (dusk/night)
+    schedule_off_time: str = "0600"  # HHMM — local time when lights turn OFF (dawn)
 
 
 def is_within_schedule(options: "RunOptions") -> bool:
@@ -616,6 +627,33 @@ def is_within_schedule(options: "RunOptions") -> bool:
         return on_t <= now < off_t
     # Overnight span, e.g. 20:00 → 06:00
     return now >= on_t or now < off_t
+
+
+def parse_time_hhmm(value: str) -> tuple[int, int]:
+    if not re.match(r"^\d{2}:\d{2}$", value):
+        raise ValueError(f"Invalid time format: {value}. Expected HH:MM")
+    hour, minute = map(int, value.split(":"))
+    if not (0 <= hour < 24 and 0 <= minute < 60):
+        raise ValueError(f"Invalid time value: {value}. Hour must be 00-23, minute 00-59")
+    return hour, minute
+
+
+def validate_run_options(state: AppState, options: RunOptions) -> None:
+    checks = [
+        (state.pattern in PATTERN_CYCLE_ORDER or state.pattern == "-1", "pattern"),
+        (state.speed in SPEED_LABELS, "speed"),
+        (0 <= state.brightness <= 255, "brightness"),
+        (0 <= state.max_brightness <= 255, "max_brightness"),
+        (state.brightness <= state.max_brightness, "brightness <= max_brightness"),
+        (options.frames >= 0, "frames"),
+        (options.duration_seconds >= 0, "duration_seconds"),
+        (options.start_delay_seconds >= 0, "start_delay_seconds"),
+        (state.analog_max >= 1, "analog_max"),
+        (not options.schedule_enabled or (parse_time_hhmm(options.schedule_on_time) and parse_time_hhmm(options.schedule_off_time)), "schedule times"),
+    ]
+    for ok, desc in checks:
+        if not ok:
+            raise ValueError(f"Invalid option: {desc}")
 
 
 strip: Any | None = None
@@ -1159,6 +1197,21 @@ def pattern_step_twinkle(state: AppState) -> None:
         active_strip.show()
     except Exception as e:
         print(f"[ERROR] Twinkle Stars pattern step failed: {e}")
+
+
+def pattern_step_blink(state: AppState) -> None:
+    """Blink — all LEDs on/off together."""
+    active_strip = get_strip()
+    try:
+        eff = resolve_effect_color(state)
+        color = eff if eff != 0 else Color(255, 255, 255)
+        for i in range(LED_COUNT):
+            active_strip.setPixelColor(i, color if state.blink_on else Color(0, 0, 0))
+        active_strip.show()
+        state.blink_on = not state.blink_on
+    except Exception as e:
+        print(f"[ERROR] Blink pattern step failed: {e}")
+        state.blink_on = False
 
 
 def wheel(position: int) -> int:
@@ -1929,7 +1982,7 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
             state.random_palette = cycle_choice(state.random_palette, RANDOM_PALETTES)
         elif state.pattern == "3":
             state.bounce_color = cycle_choice(state.bounce_color, BOUNCE_COLORS)
-        elif state.pattern in {"5", "6", "8", "9", "10", "11", "12"}:
+        elif state.pattern in {"5", "6", "8", "9", "10", "11", "12", "13"}:
             state.effect_color = cycle_choice(state.effect_color, EFFECT_COLORS)
         print_status(state)
         return True
@@ -2345,14 +2398,22 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     duration_seconds = ask_float("Timer: duration seconds (0=disabled)", 0.0, 0.0)
     start_delay_seconds = ask_float("Timer: start delay seconds", 0.0, 0.0)
 
-    schedule_enabled = ask_yes_no("Enable ON/OFF time schedule?", default=False)
-    schedule_on_time = "0600"
-    schedule_off_time = "2200"
-    if schedule_enabled:
-        raw_on = input("Schedule ON time  (HHMM, 24-hr, default 0600): ").strip()
-        schedule_on_time = raw_on.zfill(4) if raw_on else "0600"
-        raw_off = input("Schedule OFF time (HHMM, 24-hr, default 2200): ").strip()
-        schedule_off_time = raw_off.zfill(4) if raw_off else "2200"
+    schedule_on_time = "1800"
+    schedule_off_time = "0600"
+    if has_wlan_or_eth0():
+        schedule_enabled = ask_yes_no("Enable ON/OFF time schedule?", default=False)
+        if schedule_enabled:
+            raw_on = input("Schedule ON time  (HHMM, 24-hr, default 1800): ").strip()
+            schedule_on_time = raw_on.zfill(4) if raw_on else "1800"
+            raw_off = input("Schedule OFF time (HHMM, 24-hr, default 0600): ").strip()
+            schedule_off_time = raw_off.zfill(4) if raw_off else "0600"
+    else:
+        schedule_enabled = False
+        print("[INFO] No eth0/wlan0 network interface found; schedule option disabled.")
+        raw_on = input("Schedule ON time  (HHMM, 24-hr, default 1800): ").strip()
+        schedule_on_time = raw_on.zfill(4) if raw_on else "1800"
+        raw_off = input("Schedule OFF time (HHMM, 24-hr, default 0600): ").strip()
+        schedule_off_time = raw_off.zfill(4) if raw_off else "0600"
 
     state = AppState(
         pattern=pattern,
@@ -2429,7 +2490,7 @@ def parse_args() -> argparse.Namespace:
             f"{OUTPUT_EXAMPLE_TEXT}"
         ),
     )
-    parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"], help="Startup pattern")
+    parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"], help="Startup pattern")
     parser.add_argument("--SOS", "--sos", dest="sos", action="store_true", help="Shortcut for emergency SOS mode")
     parser.add_argument("--speed", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], help="Startup speed")
     parser.add_argument("--chase-color", choices=["1", "2", "3", "4", "5"], help="Chase color option (5=Custom)")
@@ -2448,8 +2509,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--duration-seconds", type=float, default=None, help="Stop after duration in seconds")
     parser.add_argument("--start-delay-seconds", type=float, default=None, help="Delay before starting animation")
     parser.add_argument("--schedule-enable", action="store_true", default=False, help="Enable ON/OFF time schedule (default DISABLED)")
-    parser.add_argument("--schedule-on", default=None, metavar="HH:MM", help="Local time when lights turn ON (default 06:00)")
-    parser.add_argument("--schedule-off", default=None, metavar="HH:MM", help="Local time when lights turn OFF (default 22:00)")
+    parser.add_argument("--schedule-on", default=None, metavar="HH:MM", help="Local time when lights turn ON (default 18:00)")
+    parser.add_argument("--schedule-off", default=None, metavar="HH:MM", help="Local time when lights turn OFF (default 06:00)")
     parser.add_argument("--headless", action="store_true", help="Load settings from JSON and run without prompts")
     parser.add_argument("--headless-config", default=HEADLESS_DEFAULT_CONFIG, help="Path to headless JSON settings file")
     parser.add_argument("--emergency-only", action="store_true", help="Run panic-flash SOS mode only")
@@ -2540,9 +2601,12 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         duration_seconds=max(0.0, args.duration_seconds if args.duration_seconds is not None else 0.0),
         start_delay_seconds=max(0.0, args.start_delay_seconds if args.start_delay_seconds is not None else 0.0),
         schedule_enabled=bool(getattr(args, "schedule_enable", False)),
-        schedule_on_time=getattr(args, "schedule_on", None) or "06:00",
-        schedule_off_time=getattr(args, "schedule_off", None) or "22:00",
+        schedule_on_time=getattr(args, "schedule_on", None) or "18:00",
+        schedule_off_time=getattr(args, "schedule_off", None) or "06:00",
     )
+    if options.schedule_enabled and not has_wlan_or_eth0():
+        print("[WARN] Schedule enabled in CLI, but no eth0/wlan0 interface found; disabling schedule.")
+        options.schedule_enabled = False
     return state, options
 
 
@@ -2579,7 +2643,10 @@ def apply_cli_overrides(state: AppState, options: RunOptions, args: argparse.Nam
     if args.start_delay_seconds is not None:
         options.start_delay_seconds = max(0.0, args.start_delay_seconds)
     if getattr(args, "schedule_enable", False):
-        options.schedule_enabled = True
+        if has_wlan_or_eth0():
+            options.schedule_enabled = True
+        else:
+            print("[WARN] --schedule-enable ignored: no eth0/wlan0 interface found.")
     if getattr(args, "schedule_on", None) is not None:
         options.schedule_on_time = args.schedule_on
     if getattr(args, "schedule_off", None) is not None:
@@ -2669,6 +2736,12 @@ def main() -> None:
 
     if used_headless and not args.headless:
         save_headless_config(headless_path, state, options, test_mode)
+
+    try:
+        validate_run_options(state, options)
+    except ValueError as exc:
+        print(f"[ERROR] Invalid configuration: {exc}")
+        return
 
     run_loop(state, options)
 
