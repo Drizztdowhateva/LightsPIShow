@@ -43,8 +43,8 @@ prompt_yes_no() {
         read -r answer || return 1
         [ -z "$answer" ] && answer="$default"
         case "$answer" in
-            y|Y|yes|YES) return 0 ;;
-            n|N|no|NO) return 1 ;;
+            y|Y) return 0 ;;
+            n|N) return 1 ;;
             *) echo "Please answer y or n." ;;
         esac
     done
