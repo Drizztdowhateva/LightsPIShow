@@ -2553,15 +2553,39 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
             json_files = sorted([p.name for p in headless_dir.glob('*.json')])
 
         # Exclude the default config from the selectable options so custom/script-mapped
-        # presets are prioritized; the default remains accessible via custom path 'e'.
+        # presets are prioritized; the default remains accessible via custom path 'd'.
         default_name = Path(HEADLESS_DEFAULT_CONFIG).name
         if default_name in json_files:
             json_files.remove(default_name)
 
-        options_list = json_files
+        # First-tier menu should only show the classic non-headless presets,
+        # leaving headless_* and 32_3/settings in the more-options path.
+        primary_names = [
+            "blue_255_2.json",
+            "day_any_rgb_31_0.json",
+            "day_blue_255_2.json",
+            "day_blue_255_6.json",
+            "day_rainbow_23_1.json",
+        ]
+        friendly_headless_name = {
+            "blue_255_2.json": "Blue 255 Brightness 2",
+            "day_any_rgb_31_0.json": "Day Any RGB Brightness 31 Speed 0",
+            "day_blue_255_2.json": "Day Blue 255 Brightness 2",
+            "day_blue_255_6.json": "Day Blue 255 Brightness 6",
+            "day_rainbow_23_1.json": "Day Rainbow Brightness 23 Speed 1",
+            "night02_any_rgb_32_3.json": "Night02 Any RGB Brightness 32 Speed 3",
+            "night_day_31.0.json": "Night/Day Mix Brightness 31",
+        }
+
+        primary_options = [f for f in json_files if f in primary_names]
+        alternate_options = [f for f in json_files if f not in primary_options]
+
+        options_list = primary_options if primary_options else json_files
+
         print("Select a headless JSON config:")
         for i, fname in enumerate(options_list, start=1):
-            print(f"{i:>2}. {fname}")
+            label = friendly_headless_name.get(fname, fname)
+            print(f"{i:>2}. {fname} ({label})")
         print(" d. More options (custom path / script listing)")
 
         default_choice = "1" if options_list else "d"
@@ -2574,7 +2598,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         elif choice in ('d', 'c'):
             # Show available config/script paths for easier selection.
             print("Available headless JSON configs:")
-            visible_configs = [default_name] + options_list
+            visible_configs = [default_name] + options_list + alternate_options
             for fname in visible_configs:
                 print(f"  - {headless_dir / fname}")
             print("Available nohup scripts:")
