@@ -2541,6 +2541,22 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
     return state, options, test_mode
 
 
+def headless_config_summary(config_path: Path) -> str:
+    """Return a short summary like Brightness - Color - Type for config file."""
+    try:
+        data = json.loads(config_path.read_text())
+    except Exception:
+        return ""
+    brightness = data.get("brightness", "?")
+    pattern_name = PATTERN_NAMES.get(str(data.get("pattern", "")), "custom")
+    chase = CHASE_COLORS.get(str(data.get("chase_color", "")), (None,))[0]
+    random_pal = RANDOM_PALETTES.get(str(data.get("random_palette", "")), (None,))[0]
+    bounce = BOUNCE_COLORS.get(str(data.get("bounce_color", "")), (None,))[0]
+    color_parts = [x for x in (chase, random_pal, bounce) if x]
+    color = "/".join(dict.fromkeys(color_parts)) if color_parts else "unknown"
+    return f"Brightness {brightness} - Color {color} - Type {pattern_name}"
+
+
 def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=True)
     headless_path = HEADLESS_DEFAULT_CONFIG
@@ -2561,14 +2577,14 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         # First-tier menu should only show the classic non-headless presets,
         # leaving headless_* and 32_3/settings in the more-options path.
         primary_names = [
-            "blue_255_2.json",
+            "blue_255_2_anytime.json",
             "day_any_rgb_31_0.json",
             "day_blue_255_2.json",
             "day_blue_255_6.json",
             "day_rainbow_23_1.json",
         ]
         friendly_headless_name = {
-            "blue_255_2.json": "Blue 255 Brightness 2",
+            "blue_255_2_anytime.json": "Blue 255 Brightness 2 (Anytime)",
             "day_any_rgb_31_0.json": "Day Any RGB Brightness 31 Speed 0",
             "day_blue_255_2.json": "Day Blue 255 Brightness 2",
             "day_blue_255_6.json": "Day Blue 255 Brightness 6",
@@ -2584,8 +2600,9 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
 
         print("Select a headless JSON config:")
         for i, fname in enumerate(options_list, start=1):
-            label = friendly_headless_name.get(fname, fname)
-            print(f"{i:>2}. {fname} ({label})")
+            summary = headless_config_summary(headless_dir / fname)
+            print(f"{i:>2}. {fname}")
+            print(f"      {summary}")
         print(" d. More options (custom path / script listing)")
 
         default_choice = "1" if options_list else "d"

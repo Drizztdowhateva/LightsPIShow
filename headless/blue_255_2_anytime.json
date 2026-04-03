@@ -22,7 +22,7 @@
     "start_delay_seconds": 0.0
   },
   "schedule": {
-    "enabled": true,
+    "enabled": false,
     "on_time": "06:00",
     "off_time": "22:00"
   }
