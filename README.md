@@ -7,6 +7,74 @@ WS281X LED pattern controller with a GTK3 graphical interface, a full CLI, safe 
 
 ![Lights PI Show Banner](media/lights-pi-show-banner.svg)
 
+## Wiring Diagram
+
+Connect a WS281X / NeoPixel LED strip to the Raspberry Pi as follows:
+
+- **GPIO 18** (BCM) -> LED data input
+- **5V** -> LED strip power +5V
+- **GND** -> LED strip ground
+
+Use a common ground between the Pi and the LED strip.
+
+### Pin Header Reference
+
+Use the raw Pi header pin numbers for wiring:
+
+| Function | BCM GPIO | Raw pin |
+|----------|----------|---------|
+| Data     | GPIO 18  | Pin 12  |
+| Power    | 5V       | Pin 4 or Pin 2 |
+| Ground   | GND      | Pin 6 (or any GND pin) |
+
+If you want a quick pin lookup, these are the key 5V/GND/data pins on the 40-pin header:
+
+| Raw pin | Name / signal |
+|---------|---------------|
+| 1       | 3.3V          |
+| 2       | 5V            |
+| 3       | GPIO 2 (SDA1) |
+| 4       | 5V            |
+| 5       | GPIO 3 (SCL1) |
+| 6       | GND           |
+| 11      | GPIO 17       |
+| 12      | GPIO 18       |
+| 13      | GPIO 27       |
+| 14      | GND           |
+| 15      | GPIO 22       |
+| 16      | GPIO 23       |
+| 17      | 3.3V          |
+| 18      | GPIO 24       |
+| 19      | GPIO 10       |
+| 20      | GND           |
+| 21      | GPIO 9        |
+| 22      | GPIO 25       |
+| 23      | GPIO 11       |
+| 24      | GPIO 8        |
+| 25      | GND           |
+| 26      | GPIO 7        |
+| 27      | ID_SD         |
+| 28      | ID_SC         |
+| 29      | GPIO 5        |
+| 30      | GND           |
+| 31      | GPIO 6        |
+| 32      | GPIO 12       |
+| 33      | GPIO 13       |
+| 34      | GND           |
+| 35      | GPIO 19       |
+| 36      | GPIO 16       |
+| 37      | GPIO 26       |
+| 38      | GPIO 20       |
+| 39      | GND           |
+| 40      | GPIO 21       |
+
+Use the raw pin numbers:
+- **Pin 12** = GPIO 18 (BCM)
+- **Pin 4** or **Pin 2** = +5V
+- **Pin 6** (or any GND pin) = GND
+
+![Raspberry Pi GPIO Header](media/gpio-header-pinout.png)
+
 ## Table of Contents
 
 - [Features](#features)
