@@ -3,7 +3,7 @@
 # Usage:
 #   sudo ./Lights.sh                     # interactive setup, then start
 #   sudo ./Lights.sh --pattern 1 ...    # pass args directly to into.py
-#   sudo ./Lights.sh --headless         # skip prompt, use default headless config
+#   sudo ./Lights.sh --preset          # load preset JSON settings
 #   sudo ./Lights.sh --SOS              # emergency SOS shortcut
 #   sudo ./Lights.sh --test             # ASCII simulation (no hardware needed)
 
@@ -29,7 +29,7 @@ Launcher options:
 
 Examples:
     ./Lights.sh
-    ./Lights.sh --yes --headless --headless-config headless/headless_settings.json
+    ./Lights.sh --yes --preset --preset-config headless/headless_settings.json
     ./Lights.sh --test --pattern 5 --speed 6
 EOF
 }
@@ -209,7 +209,7 @@ if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
 fi
 
 # If arguments are provided, pass them directly to into.py.
-# Otherwise, run interactively so the user is prompted for the headless option
+# Otherwise, run interactively so the user is prompted for the preset option
 # before the runtime shortcuts are displayed.
 if [ "$#" -gt 0 ]; then
     exec "$PYTHON" into.py "$@"

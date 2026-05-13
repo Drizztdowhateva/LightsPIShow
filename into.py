@@ -33,7 +33,7 @@ LED_FREQ_HZ = 800000
 LED_DMA = 10
 LED_INVERT = False
 LED_CHANNEL = 0
-HEADLESS_DEFAULT_CONFIG = "headless/headless_settings.json"
+PRESET_DEFAULT_CONFIG = "headless/headless_settings.json"
 NOHUP_LOG_FILE = "runtime_live.log"
 NOHUP_PID_FILE = "runtime_live.pid"
 NOHUP_SCRIPT_FILE = "runtime_live_nohup.sh"
@@ -2084,7 +2084,7 @@ def ask_yes_no(prompt: str, default: bool = False) -> bool:
     return raw in {"y", "yes", "1", "true"}
 
 
-def load_headless_config(path: str) -> dict[str, Any]:
+def load_preset_config(path: str) -> dict[str, Any]:
     config_path = Path(path)
     if not config_path.exists():
         return {}
@@ -2094,7 +2094,7 @@ def load_headless_config(path: str) -> dict[str, Any]:
         return {}
 
 
-def save_headless_config(path: str, state: AppState, options: RunOptions, test_mode: bool) -> None:
+def save_preset_config(path: str, state: AppState, options: RunOptions, test_mode: bool) -> None:
     payload: dict[str, Any] = {
         "test": bool(test_mode),
         "pattern": state.pattern,
@@ -2126,8 +2126,8 @@ def save_headless_config(path: str, state: AppState, options: RunOptions, test_m
     Path(path).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, RunOptions, bool]:
-    # Disallow custom color in headless mode: override any 'Custom' color selection
+def state_options_from_preset_data(data: dict[str, Any]) -> tuple[AppState, RunOptions, bool]:
+    # Disallow custom color in preset mode: override any 'Custom' color selection
     # For chase_color, bounce_color, effect_color: if set to '5' or '9' (Custom), use '4' (Rainbow) or '1' (default)
     raw_input_data = data.get("input")
     raw_run_data = data.get("run")
@@ -2159,7 +2159,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
     if state.effect_color == "9":
         state.effect_color = "3"  # Blue (or pick another default, not custom)
     if state.custom_color != 0:
-        state.custom_color = 0  # Ignore custom color in headless
+        state.custom_color = 0  # Ignore custom color in preset
 
     raw_schedule_data = data.get("schedule")
     schedule_data = cast(dict[str, Any], raw_schedule_data) if isinstance(raw_schedule_data, dict) else {}
@@ -2195,9 +2195,9 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
 
 
 def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
-    use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=True)
-    headless_path = HEADLESS_DEFAULT_CONFIG
-    if use_headless:
+    use_preset = ask_yes_no("Preset mode (load JSON settings)?", default=True)
+    preset_path = PRESET_DEFAULT_CONFIG
+    if use_preset:
         # Discover JSON files in the `headless/` directory to present as
         # selectable options (a-d), with option 'e' to enter a custom path.
         headless_dir = Path("headless")
@@ -2207,32 +2207,32 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
 
         # Exclude the default config from the selectable options so all 4 pattern
         # configs are shown; the default remains accessible via custom path 'e'.
-        default_name = Path(HEADLESS_DEFAULT_CONFIG).name
+        default_name = Path(PRESET_DEFAULT_CONFIG).name
         if default_name in json_files:
             json_files.remove(default_name)
 
         options_list = json_files[:4]
-        print("Select a headless JSON config:")
+        print("Select a preset JSON config:")
         letters = ['a', 'b', 'c', 'd']
         for i, fname in enumerate(options_list):
             print(f"{letters[i]}. {fname}")
         print("e. Enter custom path")
 
         choice = input("Choose (a-e, default a): ").strip().lower() or 'a'
-        headless_path = HEADLESS_DEFAULT_CONFIG
+        preset_path = PRESET_DEFAULT_CONFIG
         if choice in letters:
             idx = letters.index(choice)
             if idx < len(options_list):
-                headless_path = str(headless_dir / options_list[idx])
+                preset_path = str(headless_dir / options_list[idx])
             else:
-                headless_path = HEADLESS_DEFAULT_CONFIG
+                preset_path = PRESET_DEFAULT_CONFIG
         elif choice == 'e':
-            entered = input(f"Headless JSON path (default {HEADLESS_DEFAULT_CONFIG}): ").strip()
-            headless_path = entered or HEADLESS_DEFAULT_CONFIG
+            entered = input(f"Preset JSON path (default {PRESET_DEFAULT_CONFIG}): ").strip()
+            preset_path = entered or PRESET_DEFAULT_CONFIG
 
-        data = load_headless_config(headless_path)
-        state, options, test_mode = state_options_from_headless_data(data)
-        return state, options, test_mode, True, headless_path
+        data = load_preset_config(preset_path)
+        state, options, test_mode = state_options_from_preset_data(data)
+        return state, options, test_mode, True, preset_path
 
     print("Select a pattern:")
     for key, name in sorted(PATTERN_NAMES.items(), key=lambda kv: int(kv[0])):
@@ -2328,7 +2328,7 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
         schedule_off_time=schedule_off_time,
     )
 
-    return state, options, test_mode, False, headless_path
+    return state, options, test_mode, False, preset_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -2356,8 +2356,8 @@ def parse_args() -> argparse.Namespace:
             "  --schedule-enable          Enable ON/OFF time schedule (default DISABLED)\n"
             "  --schedule-on HH:MM        Local time when lights turn ON  (default 06:00)\n"
             "  --schedule-off HH:MM       Local time when lights turn OFF (default 22:00)\n"
-            "  --headless                 Load settings from separate JSON\n"
-            "  --headless-config FILE     JSON settings path\n"
+            "  --preset                   Load settings from preset JSON\n"
+            "  --preset-config FILE       Preset JSON settings path\n"
             "  --emergency-only           Panic flash SOS only mode\n"
             "  --support-export [IDS]     Export task(s) to Copilot queue (IDs comma-separated, blank=open)\n"
             "  --test                     Safe ASCII simulation (no hardware)\n"
@@ -2371,7 +2371,7 @@ def parse_args() -> argparse.Namespace:
             "Shortcuts during run:\n"
             "  ←/→ cycle pattern, ↑/↓ brightness, +/= speed up, - speed down,\n"
             "  c color option, n named colors, m/M support manager, o/O nohup, Ctrl+O nohup tools, h help, q quit\n"
-            "  SOS pattern is -1 (set via --SOS, --pattern -1, interactive prompt, or headless JSON).\n"
+            "  SOS pattern is -1 (set via --SOS, --pattern -1, interactive prompt, or preset JSON).\n"
         ),
     )
     parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"], help="Startup pattern")
@@ -2395,8 +2395,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schedule-enable", action="store_true", default=False, help="Enable ON/OFF time schedule (default DISABLED)")
     parser.add_argument("--schedule-on", default=None, metavar="HH:MM", help="Local time when lights turn ON (default 06:00)")
     parser.add_argument("--schedule-off", default=None, metavar="HH:MM", help="Local time when lights turn OFF (default 22:00)")
-    parser.add_argument("--headless", action="store_true", help="Load settings from JSON and run without prompts")
-    parser.add_argument("--headless-config", default=HEADLESS_DEFAULT_CONFIG, help="Path to headless JSON settings file")
+    parser.add_argument("--preset", action="store_true", help="Load settings from preset JSON and run without prompts")
+    parser.add_argument("--preset-config", default=PRESET_DEFAULT_CONFIG, help="Path to preset JSON settings file")
     parser.add_argument("--emergency-only", action="store_true", help="Run panic-flash SOS mode only")
     parser.add_argument(
         "--support-export",
@@ -2415,10 +2415,10 @@ def parse_args() -> argparse.Namespace:
         help="Print runtime shortcuts and exit",
     )
     parser.add_argument(
-        "--export-headless",
+        "--export-preset",
         nargs="?",
         const="",
-        help="Export current settings to headless JSON file (optionally specify name) and exit",
+        help="Export current settings to preset JSON file (optionally specify name) and exit",
     )
     return parser.parse_args()
 
@@ -2442,6 +2442,10 @@ def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
             args.frames is not None,
             args.duration_seconds is not None,
             args.start_delay_seconds is not None,
+            args.schedule_enable,
+            args.schedule_on is not None,
+            args.schedule_off is not None,
+            args.preset,
             args.emergency_only,
             args.sos,
         ]
@@ -2564,26 +2568,26 @@ def main() -> None:
     state: AppState
     options: RunOptions
     test_mode = bool(args.test)
-    used_headless = bool(args.headless)
-    headless_path = args.headless_config
+    used_preset = bool(args.preset)
+    preset_path = args.preset_config
 
-    if args.headless:
-        data = load_headless_config(args.headless_config)
-        state, options, config_test_mode = state_options_from_headless_data(data)
+    if args.preset:
+        data = load_preset_config(args.preset_config)
+        state, options, config_test_mode = state_options_from_preset_data(data)
         test_mode = test_mode or config_test_mode
         state, options = apply_cli_overrides(state, options, args)
     elif not has_non_interactive_cli_options(args):
-        state, options, interactive_test_mode, used_headless, headless_path = interactive_setup()
+        state, options, interactive_test_mode, used_preset, preset_path = interactive_setup()
         test_mode = test_mode or interactive_test_mode
     else:
         state, options = state_from_args(args)
 
-    # Export current settings to headless JSON (and exit) if requested.
-    if args.export_headless is not None:
+    # Export current settings to preset JSON (and exit) if requested.
+    if args.export_preset is not None:
         headless_dir = Path("headless")
         headless_dir.mkdir(parents=True, exist_ok=True)
 
-        specified = args.export_headless or ""
+        specified = args.export_preset or ""
         if specified:
             out_path = Path(specified)
             if not out_path.suffix:
@@ -2596,8 +2600,8 @@ def main() -> None:
             filename = f"{state.pattern}_{patt_label}.json"
             out_path = headless_dir / filename
 
-        save_headless_config(str(out_path), state, options, test_mode)
-        print(f"Exported headless config to: {out_path}")
+        save_preset_config(str(out_path), state, options, test_mode)
+        print(f"Exported preset config to: {out_path}")
         return
 
     if test_mode:
@@ -2607,15 +2611,15 @@ def main() -> None:
         print("Hardware not available, running in test mode.")
         init_virtual_strip()
     else:
-        if used_headless:
-            print("Running in headless mode (hardware enabled).")
+        if used_preset:
+            print("Running in preset mode (hardware enabled).")
         init_strip()
     get_strip().begin()
     clear_strip(show_now=test_mode)
     apply_brightness_from_state(state)
 
-    if used_headless and not args.headless:
-        save_headless_config(headless_path, state, options, test_mode)
+    if used_preset and not args.preset:
+        save_preset_config(preset_path, state, options, test_mode)
 
     run_loop(state, options)
 
