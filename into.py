@@ -2249,7 +2249,7 @@ def state_options_from_headless_data(data: dict[str, Any]) -> tuple[AppState, Ru
 
 
 def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
-    use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=False)
+    use_headless = ask_yes_no("Headless config mode (load JSON settings)?", default=True)
     headless_path = HEADLESS_DEFAULT_CONFIG
     if use_headless:
         # Discover JSON files in the `headless/` directory to present as
@@ -2657,13 +2657,16 @@ def main() -> None:
         print(f"Exported headless config to: {out_path}")
         return
 
-    if test_mode:
-        print("Running in --test ASCII mode (hardware disabled).")
+    if test_mode or used_headless:
+        if test_mode:
+            print("Running in --test ASCII mode (hardware disabled).")
+        else:
+            print("Running in headless mode (hardware disabled).")
         init_virtual_strip()
     else:
         init_strip()
     get_strip().begin()
-    clear_strip(show_now=not test_mode)
+    clear_strip(show_now=not (test_mode or used_headless))
     apply_brightness_from_state(state)
 
     if used_headless and not args.headless:
