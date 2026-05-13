@@ -378,35 +378,8 @@ def print_named_colors() -> None:
 
 
 
-SHORTCUTS_TEXT = """
-=== Lights Pi Show Controls ===
-
-[ Patterns ]
-    1..9      Switch pattern directly
-    a / d     Cycle pattern left / right
-
-[ Brightness & Speed ]
-    w / s     Brightness up / down
-    + / =     Speed up
-    -         Speed down
-
-[ Colors ]
-    c         Cycle color option for current pattern
-    k         Enter custom color (name, #RRGGBB, or r,g,b)
-    n         Show named color list
-
-[ Other ]
-    t / T     Set ON/OFF schedule time
-    m / M     Support task manager
-    o / O     Print nohup command
-    Ctrl+O    Nohup tools
-    h         Show this help screen
-    q         Quit
-    Ctrl+C    Quit
-""".strip()
-
-DETAILED_HELP_TEXT = """
-=== Lights Pi Show - Full Help ===
+HELP_TEXT = """
+=== Lights Pi Show - Help ===
 
 [ Pattern Selection ]
     1..9      Instantly switch to a pattern (see docs for pattern list)
@@ -432,35 +405,12 @@ DETAILED_HELP_TEXT = """
     Ctrl+O    Nohup tools (print/save sudo nohup .sh script)
 
 [ General ]
-    h         Show this help screen again (simple)
-    H         Show detailed help screen
+    h         Show this help screen
+    H         Show this help screen again
     q         Quit the program
     Ctrl+C    Force quit
 
 Tip: For custom colors, press 'k', type your color, and press Enter.
-""".strip()
-
-OUTPUT_EXAMPLE_TEXT = """
-Runtime shortcuts:
-    1..9        Switch pattern directly
-    a / d       Cycle pattern left / right
-    w / s       Brightness up / down
-    + / =       Speed up    -  Speed down
-    c           Cycle color option for current pattern
-    n           Show named color list
-    h           Show this shortcuts help again
-    q           Quit
-    Ctrl+C      Quit
-Pattern: Chase | Speed: Level 9 | Color: Rainbow
-Pattern: Chase | Speed: Level 9 | Color: Rainbow
-Pattern: Random | Speed: Level 9 | Palette: Any RGB
-Pattern: Bounce | Speed: Level 9 | Color: Blue
-Pattern: Chase | Speed: Level 9 | Color: Rainbow
-Pattern: Random | Speed: Level 9 | Palette: Any RGB
-Pattern: Bounce | Speed: Level 9 | Color: Blue
-Pattern: Chase | Speed: Level 9 | Color: Rainbow
-Pattern: Bounce | Speed: Level 9 | Color: Blue
-Pattern: Random | Speed: Level 9 | Palette: Any RGB
 """.strip()
 
 
@@ -1850,12 +1800,8 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         print_named_colors()
         print_status(state)
         return True
-    if key == "h":
-        print(SHORTCUTS_TEXT)
-        print_status(state)
-        return True
-    if key == "H":
-        print(DETAILED_HELP_TEXT)
+    if key in ("h", "H"):
+        print(HELP_TEXT)
         print_status(state)
         return True
     # Handle 'T' for test mode preview (uppercase T only)
@@ -1982,7 +1928,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
         init_test_menu_mode(state)
         print_test_menu(state)
     else:
-        print(SHORTCUTS_TEXT)
+        print(HELP_TEXT)
 
     if options.start_delay_seconds > 0:
         time.sleep(max(0.0, options.start_delay_seconds))
@@ -2426,9 +2372,6 @@ def parse_args() -> argparse.Namespace:
             "  ←/→ cycle pattern, ↑/↓ brightness, +/= speed up, - speed down,\n"
             "  c color option, n named colors, m/M support manager, o/O nohup, Ctrl+O nohup tools, h help, q quit\n"
             "  SOS pattern is -1 (set via --SOS, --pattern -1, interactive prompt, or headless JSON).\n"
-            "\n"
-            "Defined output example:\n"
-            f"{OUTPUT_EXAMPLE_TEXT}"
         ),
     )
     parser.add_argument("--pattern", choices=["-1", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"], help="Startup pattern")
@@ -2600,7 +2543,7 @@ def main() -> None:
     args = parse_args()
 
     if args.show_shortcuts:
-        print(SHORTCUTS_TEXT)
+        print(HELP_TEXT)
         return
 
     if args.show_colors:
