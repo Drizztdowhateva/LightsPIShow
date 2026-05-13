@@ -496,6 +496,11 @@ class AppState:
     # Buffer for direct custom color entry
     color_input_buffer: str = ""
     color_input_active: bool = False
+    
+    # Test mode state
+    test_menu_active: bool = False
+    test_preview_active: bool = False
+    test_preview_frames_left: int = 0
 
     def __post_init__(self) -> None:
         if self.fire_heat is None:
@@ -1853,7 +1858,12 @@ def handle_key(state: AppState, options: RunOptions, key: str, fd: int, old_sett
         print(DETAILED_HELP_TEXT)
         print_status(state)
         return True
-    if key in {"t", "T"}:
+    # Handle 'T' for test mode preview (uppercase T only)
+    if key == "T" and isinstance(get_strip(), VirtualStrip):
+        start_test_preview(state, 50)
+        return True
+    # Handle 't' for schedule time (lowercase t only, or uppercase when not in test mode)
+    if key == "t" or (key == "T" and not isinstance(get_strip(), VirtualStrip)):
         prompt_schedule_time(fd, old_settings, options)
         print_status(state)
         return True
@@ -1902,18 +1912,77 @@ def run_pattern_step(state: AppState) -> None:
         pattern_step_meteor(state)
     elif state.pattern == "12":
         pattern_step_twinkle(state)
-    elif state.pattern == "13":
-        pattern_step_blink(state)
     else:
         pattern_step_chase(state)
 
 
+def init_test_menu_mode(state: AppState) -> None:
+    """Initialize test menu mode - show static menu, no frames until T is pressed."""
+    state.test_menu_active = True
+    state.test_preview_active = False
+    state.test_preview_frames_left = 0
+    
+    # Start with first pattern (skip SOS -1)
+    demo_patterns = [k for k in PATTERN_CYCLE_ORDER if k in PATTERN_NAMES]
+    if demo_patterns:
+        state.pattern = demo_patterns[0]
+
+
+def print_test_menu(state: AppState) -> None:
+    """Print the test mode menu with current selection."""
+    pattern_name = PATTERN_NAMES.get(state.pattern, state.pattern)
+    print("\n" + "="*60)
+    print("TEST MODE - Pattern Selection Menu")
+    print("="*60)
+    print(f"Current Pattern: {state.pattern}: {pattern_name}")
+    print("")
+    print("Controls:")
+    print("• 1-9    Select pattern directly")
+    print("• a/d    Cycle through patterns")
+    print("• T      Show 50 frames of current pattern")
+    print("• q      Quit")
+    print("")
+    print("Press T to preview the current pattern...")
+    print("="*60 + "\n")
+
+
+def start_test_preview(state: AppState, frames: int = 50) -> None:
+    """Start a preview of the current pattern for specified frames."""
+    state.test_preview_active = True
+    state.test_preview_frames_left = frames
+    pattern_name = PATTERN_NAMES.get(state.pattern, state.pattern)
+    print(f"[Preview] Showing {frames} frames of {pattern_name}...")
+    clear_strip(show_now=False)  # Clear strip before preview
+
+
+def update_test_preview(state: AppState) -> bool:
+    """Update test preview. Returns True if preview should continue, False if done."""
+    if not state.test_preview_active:
+        return True  # Not in preview
+    
+    state.test_preview_frames_left -= 1
+    
+    if state.test_preview_frames_left <= 0:
+        # Preview complete, return to menu
+        state.test_preview_active = False
+        pattern_name = PATTERN_NAMES.get(state.pattern, state.pattern)
+        print(f"[Preview] Complete: {pattern_name}")
+        print_test_menu(state)  # Show menu again
+        return True  # Continue with menu mode
+    
+    return True  # Continue preview
+
+
 def run_loop(state: AppState, options: RunOptions) -> None:
-    if isinstance(get_strip(), VirtualStrip):
+    is_test_mode = isinstance(get_strip(), VirtualStrip)
+    
+    if is_test_mode:
         print("Test mode: realtime ASCII overlay (press q to quit).")
+        # Initialize test menu mode for test mode
+        init_test_menu_mode(state)
+        print_test_menu(state)
     else:
         print(SHORTCUTS_TEXT)
-    print_status(state)
 
     if options.start_delay_seconds > 0:
         time.sleep(max(0.0, options.start_delay_seconds))
@@ -1948,14 +2017,27 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                 _schedule_was_active = True
 
             apply_pi_input_response(state)
-            run_pattern_step(state)
+            
+            # Only run pattern steps if in test preview mode or not in test mode
+            if not is_test_mode or state.test_preview_active:
+                run_pattern_step(state)
+                
+                # Update test preview if active
+                if is_test_mode and not update_test_preview(state):
+                    break  # Preview mode wants to exit
 
             frame_count += 1
             if options.frames > 0 and frame_count >= options.frames:
                 break
             if options.duration_seconds > 0 and (time.monotonic() - start_time) >= options.duration_seconds:
                 break
-            time.sleep(get_delay(state))
+            
+            # Only sleep/delay when running frames
+            if not is_test_mode or state.test_preview_active:
+                time.sleep(get_delay(state))
+            else:
+                # In test menu mode, sleep briefly to be responsive to key input
+                time.sleep(0.1)
         return
 
     fd = sys.stdin.fileno()
@@ -1993,15 +2075,27 @@ def run_loop(state: AppState, options: RunOptions) -> None:
                 _schedule_was_active = True
 
             apply_pi_input_response(state)
-            run_pattern_step(state)
+            
+            # Only run pattern steps if in test preview mode or not in test mode
+            if not is_test_mode or state.test_preview_active:
+                run_pattern_step(state)
+                
+                # Update test preview if active
+                if is_test_mode and not update_test_preview(state):
+                    break  # Preview mode wants to exit
 
             frame_count += 1
             if options.frames > 0 and frame_count >= options.frames:
                 break
             if options.duration_seconds > 0 and (time.monotonic() - start_time) >= options.duration_seconds:
                 break
-
-            time.sleep(get_delay(state))
+            
+            # Only sleep/delay when running frames
+            if not is_test_mode or state.test_preview_active:
+                time.sleep(get_delay(state))
+            else:
+                # In test menu mode, sleep briefly to be responsive to key input
+                time.sleep(0.1)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
