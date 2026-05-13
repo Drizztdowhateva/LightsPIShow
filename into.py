@@ -2600,16 +2600,18 @@ def main() -> None:
         print(f"Exported headless config to: {out_path}")
         return
 
-    if test_mode or used_headless:
-        if test_mode:
-            print("Running in --test ASCII mode (hardware disabled).")
-        else:
-            print("Running in headless mode (hardware disabled).")
+    if test_mode:
+        print("Running in --test ASCII mode (hardware disabled).")
+        init_virtual_strip()
+    elif not _HAVE_RPI_WS281X:
+        print("Hardware not available, running in test mode.")
         init_virtual_strip()
     else:
+        if used_headless:
+            print("Running in headless mode (hardware enabled).")
         init_strip()
     get_strip().begin()
-    clear_strip(show_now=not (test_mode or used_headless))
+    clear_strip(show_now=test_mode)
     apply_brightness_from_state(state)
 
     if used_headless and not args.headless:
