@@ -89,11 +89,11 @@ Then run normally:
 While running the CLI runtime, press `O` to print the generated `nohup` command
 for the current settings. That command writes:
 
-- `runtime_live.log` for logs
-- `runtime_live.pid` for process ID
+- `Scripts/runtime_live.log` for logs
+- `Scripts/runtime_live.pid` for process ID
 
 Stop background runtime:
 
 ```bash
-kill $(cat runtime_live.pid) 2>/dev/null || echo "No running process found"
+kill $(cat Scripts/runtime_live.pid) 2>/dev/null || echo "No running process found"
 ```

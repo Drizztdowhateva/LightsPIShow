@@ -6,6 +6,6 @@ __pycache__/
 venv/
 .env
 .DS_Store
-runtime_live.log
-runtime_live.pid
+Scripts/runtime_live.log
+Scripts/runtime_live.pid
 runtime_nohup_test.log

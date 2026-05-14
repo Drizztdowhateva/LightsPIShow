@@ -54,7 +54,7 @@ sudo ./Lights.sh --SOS
 Stop it:
 
 ```bash
-kill $(cat runtime_live.pid) 2>/dev/null || echo "No running process found"
+kill $(cat Scripts/runtime_live.pid) 2>/dev/null || echo "No running process found"
 ```
 
 ## Installation
@@ -261,7 +261,7 @@ python3 into.py --pattern 7 --schedule-enable --schedule-on 20:00 --schedule-off
 # Background (nohup) with schedule — lights on 06:00 → 22:00
 nohup python3 into.py --pattern 3 --speed 4 \
   --schedule-enable --schedule-on 06:00 --schedule-off 22:00 \
-  > runtime_live.log 2>&1 & echo $! > runtime_live.pid
+  > Scripts/runtime_live.log 2>&1 & echo $! > Scripts/runtime_live.pid
 ```
 
 ### Headless JSON
