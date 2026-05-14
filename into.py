@@ -466,8 +466,8 @@ class RunOptions:
     start_delay_seconds: float = 0.0
     # ON/OFF time schedule — disabled by default; uses local host timezone.
     schedule_enabled: bool = False
-    schedule_on_time: str = "0600"   # HHMM — local time when lights turn ON (e.g. 1800 for 6pm)
-    schedule_off_time: str = "2200"  # HHMM — local time when lights turn OFF (e.g. 600 for 6am)
+    schedule_on_time: str = "1800"   # HHMM — local time when lights turn ON (e.g. 1800 for 6pm)
+    schedule_off_time: str = "0600"  # HHMM — local time when lights turn OFF (e.g. 600 for 6am)
 
 
 def is_within_schedule(options: "RunOptions") -> bool:
@@ -1103,7 +1103,8 @@ def print_status(state: AppState) -> None:
         detail = ""
 
     brightness_pct = int((max(0, state.brightness) / max(1, state.max_brightness)) * 100)
-    print(f"Pattern: {pattern_name} | Speed: {speed_name} | Brightness: {state.brightness} ({brightness_pct}%) | {detail}")
+    brightness_pct = min(brightness_pct, 100)  # Cap at 100%
+    print(f"Pattern: {pattern_name} | Speed: {speed_name} | Brightness: {state.brightness}/{state.max_brightness} ({brightness_pct}%) | {detail}")
 
 
 def maybe_read_key() -> str | None:
@@ -1935,6 +1936,7 @@ def run_loop(state: AppState, options: RunOptions) -> None:
 
     frame_count = 0
     start_time = time.monotonic()
+    auto_stop_frames = 50  # Auto-stop after 50 frames in test mode when frames=0
 
     _schedule_was_active: bool = True  # tracks whether lights were on last iteration
 
@@ -1974,6 +1976,10 @@ def run_loop(state: AppState, options: RunOptions) -> None:
 
             frame_count += 1
             if options.frames > 0 and frame_count >= options.frames:
+                break
+            if options.frames == 0 and is_test_mode and frame_count >= auto_stop_frames:
+                print(f"\nAuto-stopped after {auto_stop_frames} frames (test mode)")
+                print_test_menu(state)  # Return to menu
                 break
             if options.duration_seconds > 0 and (time.monotonic() - start_time) >= options.duration_seconds:
                 break
@@ -2032,6 +2038,10 @@ def run_loop(state: AppState, options: RunOptions) -> None:
 
             frame_count += 1
             if options.frames > 0 and frame_count >= options.frames:
+                break
+            if options.frames == 0 and is_test_mode and frame_count >= auto_stop_frames:
+                print(f"\nAuto-stopped after {auto_stop_frames} frames (test mode)")
+                print_test_menu(state)  # Return to menu
                 break
             if options.duration_seconds > 0 and (time.monotonic() - start_time) >= options.duration_seconds:
                 break
@@ -2169,8 +2179,8 @@ def state_options_from_preset_data(data: dict[str, Any]) -> tuple[AppState, RunO
         duration_seconds=max(0.0, as_float(run_data.get("duration_seconds"), 0.0)),
         start_delay_seconds=max(0.0, as_float(run_data.get("start_delay_seconds"), 0.0)),
         schedule_enabled=as_bool(schedule_data.get("enabled"), False),
-        schedule_on_time=as_str(schedule_data.get("on_time"), "06:00"),
-        schedule_off_time=as_str(schedule_data.get("off_time"), "22:00"),
+        schedule_on_time=as_str(schedule_data.get("on_time"), "18:00"),
+        schedule_off_time=as_str(schedule_data.get("off_time"), "06:00"),
     )
     test_mode = as_bool(data.get("test"), False)
 
@@ -2294,13 +2304,13 @@ def interactive_setup() -> tuple[AppState, RunOptions, bool, bool, str]:
     start_delay_seconds = ask_float("Timer: start delay seconds", 0.0, 0.0)
 
     schedule_enabled = ask_yes_no("Enable ON/OFF time schedule?", default=False)
-    schedule_on_time = "0600"
-    schedule_off_time = "2200"
+    schedule_on_time = "1800"
+    schedule_off_time = "0600"
     if schedule_enabled:
-        raw_on = input("Schedule ON time  (HHMM, 24-hr, default 0600): ").strip()
-        schedule_on_time = raw_on.zfill(4) if raw_on else "0600"
-        raw_off = input("Schedule OFF time (HHMM, 24-hr, default 2200): ").strip()
-        schedule_off_time = raw_off.zfill(4) if raw_off else "2200"
+        raw_on = input("Schedule ON time  (HHMM, 24-hr, default 1800): ").strip()
+        schedule_on_time = raw_on.zfill(4) if raw_on else "1800"
+        raw_off = input("Schedule OFF time (HHMM, 24-hr, default 0600): ").strip()
+        schedule_off_time = raw_off.zfill(4) if raw_off else "0600"
 
     state = AppState(
         pattern=pattern,
@@ -2354,8 +2364,8 @@ def parse_args() -> argparse.Namespace:
             "  --duration-seconds SEC     Stop after SEC (0 disables)\n"
             "  --start-delay-seconds SEC  Delay before animation starts\n"
             "  --schedule-enable          Enable ON/OFF time schedule (default DISABLED)\n"
-            "  --schedule-on HH:MM        Local time when lights turn ON  (default 06:00)\n"
-            "  --schedule-off HH:MM       Local time when lights turn OFF (default 22:00)\n"
+            "  --schedule-on HH:MM        Local time when lights turn ON  (default 18:00)\n"
+            "  --schedule-off HH:MM       Local time when lights turn OFF (default 06:00)\n"
             "  --preset                   Load settings from preset JSON\n"
             "  --preset-config FILE       Preset JSON settings path\n"
             "  --emergency-only           Panic flash SOS only mode\n"
@@ -2420,7 +2430,53 @@ def parse_args() -> argparse.Namespace:
         const="",
         help="Export current settings to preset JSON file (optionally specify name) and exit",
     )
+    parser.add_argument(
+        "--list-presets",
+        action="store_true",
+        help="List all available preset JSON configurations",
+    )
     return parser.parse_args()
+
+
+def list_presets() -> None:
+    """List all available preset JSON configurations with descriptions."""
+    headless_dir = Path("headless")
+    if not headless_dir.is_dir():
+        print("No presets directory found.")
+        return
+
+    json_files = sorted(headless_dir.glob('headless_*.json'))
+    if not json_files:
+        print("No preset files found in headless/ directory.")
+        return
+
+    print("=== Available Presets ===")
+    for i, json_file in enumerate(json_files, 1):
+        try:
+            data = json.loads(json_file.read_text(encoding="utf-8"))
+            pattern = data.get("pattern", "?")
+            pattern_name = PATTERN_NAMES.get(pattern, f"Pattern {pattern}")
+            speed = data.get("speed", "?")
+            brightness = data.get("brightness", "?")
+            schedule_enabled = data.get("schedule", {}).get("enabled", False)
+            
+            # Format the preset name for display
+            display_name = json_file.stem.replace("headless_", "").replace("_", " ").title()
+            
+            print(f"\n{i}. {display_name}")
+            print(f"   File: {json_file.name}")
+            print(f"   Pattern: {pattern_name} ({pattern})")
+            print(f"   Speed: Level {speed}")
+            print(f"   Brightness: {brightness}")
+            if schedule_enabled:
+                on_time = data.get("schedule", {}).get("on_time", "?")
+                off_time = data.get("schedule", {}).get("off_time", "?")
+                print(f"   Schedule: ON {on_time} to OFF {off_time}")
+        except (json.JSONDecodeError, OSError):
+            print(f"\n{i}. {json_file.name} (invalid JSON)")
+    
+    print(f"\nTotal: {len(json_files)} preset(s)")
+    print("\nUsage: sudo ./Lights.sh --preset --preset-config headless/<filename>")
 
 
 def has_non_interactive_cli_options(args: argparse.Namespace) -> bool:
@@ -2488,8 +2544,8 @@ def state_from_args(args: argparse.Namespace) -> tuple[AppState, RunOptions]:
         duration_seconds=max(0.0, args.duration_seconds if args.duration_seconds is not None else 0.0),
         start_delay_seconds=max(0.0, args.start_delay_seconds if args.start_delay_seconds is not None else 0.0),
         schedule_enabled=bool(getattr(args, "schedule_enable", False)),
-        schedule_on_time=getattr(args, "schedule_on", None) or "06:00",
-        schedule_off_time=getattr(args, "schedule_off", None) or "22:00",
+        schedule_on_time=getattr(args, "schedule_on", None) or "18:00",
+        schedule_off_time=getattr(args, "schedule_off", None) or "06:00",
     )
     return state, options
 
@@ -2552,6 +2608,10 @@ def main() -> None:
 
     if args.show_colors:
         print_named_colors()
+        return
+
+    if args.list_presets:
+        list_presets()
         return
 
     if args.support_export is not None:

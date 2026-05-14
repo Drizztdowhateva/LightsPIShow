@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Lights Pi Show
+Comment=WS281X LED pattern runner with GTK3 GUI
+Exec=/home/blackmox/code/LightsPiShow/Lights_GUI.sh
+Icon=/home/blackmox/code/LightsPiShow/media/icon.svg
+Terminal=false
+Categories=Utility;Graphics;
+Keywords=LED;lights;WS281X;RGB;pattern;
