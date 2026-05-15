@@ -1615,6 +1615,33 @@ def print_nohup_command_block(command: str) -> None:
     sys.stdout.flush()
 
 
+def generate_nohup_script_name(state: AppState, options: RunOptions) -> str:
+    """Generate script name based on pattern, color, and schedule status.
+    
+    If schedule enabled: Time-<Pattern>-<Color>.sh
+    If schedule disabled: <Pattern>-<Color>.sh
+    """
+    pattern_name = PATTERN_NAMES.get(state.pattern, f"Pattern{state.pattern}")
+    
+    # Get color name
+    color_name = "Default"
+    if state.pattern == "0":  # Chase
+        color_name = CHASE_COLORS.get(state.chase_color, ["Unknown"])[0]
+    elif state.pattern in {"1", "2", "3", "4", "5", "6", "8", "9", "10", "11", "12"}:  # Effect color patterns
+        color_name = EFFECT_COLORS.get(state.effect_color, ["Unknown"])[0]
+    elif state.pattern == "6":  # Random
+        color_name = PALETTE_NAMES.get(state.random_palette, "Unknown")
+    
+    # Clean names for filename (remove spaces and special chars)
+    pattern_clean = pattern_name.replace(" ", "").replace("/", "-")
+    color_clean = color_name.replace(" ", "").replace("/", "-")
+    
+    if options.schedule_enabled:
+        return f"Scripts/Time-{pattern_clean}-{color_clean}.sh"
+    else:
+        return f"Scripts/{pattern_clean}-{color_clean}.sh"
+
+
 def save_nohup_script(path: Path, command: str) -> Path:
     script = (
         "#!/usr/bin/env bash\n"
@@ -1684,7 +1711,7 @@ def prompt_nohup_tools(fd: int, old_settings: Any, state: AppState, options: Run
             print_nohup_command_block(cmd)
 
         if choice in {"s", "b"}:
-            default_path = NOHUP_SCRIPT_FILE
+            default_path = generate_nohup_script_name(state, options)
             raw_path = input(f"Script path (default {default_path}): ").strip()
             out_path = Path(raw_path or default_path).expanduser()
             saved = save_nohup_script(out_path, sudo_cmd)
